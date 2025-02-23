@@ -34,12 +34,7 @@ Current implementation of the **``glvmlss``** package allows for mixed data foll
 
 ### Installation
 
-You can install the released version of **``glvmlss``** from CRAN with:
-
-``` r
-install.packages("glvmlss")
-```
-And the development version from [GitHub](https://github.com/) with:
+You can install the development version of **``glvmlss``** from [GitHub](https://github.com/) with:
 
 ``` r
 # install.packages("devtools")
@@ -48,5 +43,8 @@ devtools::install_github("ccardehu/glvmlss")
 
 ### Literature
 
--   Cárdenas-Hurtado, C., Moustaki, I., Chen, Y., & Marra, G. (2024).
-    “Generalized Latent Variable Models for Location, Scale, and Shape parameters”.
+- Cárdenas-Hurtado, C., Moustaki, I., Chen, Y., & Marra, G. (2025).
+  “Generalized Latent Variable Models for Location, Scale, and Shape parameters” (Accepted for Publication in Psychometrika).
+    
+- Cárdenas-Hurtado, C., (2023), “Generalized Latent Variable Models for Location, Scale, and Shape parameters”,
+  PhD Thesis. Department of Statistics, The London School of Economics and Political Science
