@@ -32,6 +32,10 @@ such as the variance, skewness, and kurtosis, as functions of the latent variabl
 
 Current implementation of the **``glvmlss``** package allows for mixed data following Normal, Bernoulli, Beta, and Skew-Normal distributions.
 
+### Replication files for Psychometrika paper
+
+Replication files are available at the OSF repository: [https://osf.io/2x7mw/](https://osf.io/2x7mw/).
+
 ### Installation
 
 You can install the development version of **``glvmlss``** from [GitHub](https://github.com/) with:
@@ -46,5 +50,5 @@ devtools::install_github("ccardehu/glvmlss")
 - Cárdenas-Hurtado, C., Moustaki, I., Chen, Y., & Marra, G. (2025).
   “Generalized Latent Variable Models for Location, Scale, and Shape parameters” (Accepted for Publication in Psychometrika).
     
-- Cárdenas-Hurtado, C., (2023), “Generalized Latent Variable Models for Location, Scale, and Shape parameters”,
+- Cárdenas-Hurtado, C., (2023), “Generalised Latent Variable Models for Location, Scale, and Shape parameters”,
   PhD Thesis. Department of Statistics, The London School of Economics and Political Science
