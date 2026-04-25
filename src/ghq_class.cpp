@@ -10,6 +10,7 @@ using namespace Rcpp;
 using namespace arma;
 using namespace ens;
 
+// Computes univariate ghQ (inspect D. Rizopoulos ltm package)
 Rcpp::List ghQ::ghq(const int &n){
   int m = trunc((n + 1) / 2) ;
   Rcpp::NumericVector x(n,-1.0), w(n,-1.0) ;
@@ -27,7 +28,7 @@ Rcpp::List ghQ::ghq(const int &n){
       z = 2.0 * z - x[i - 2] ;
     }
     for(int j = 0; j < 10; j++){
-      p1 = 0.751125544464943 ;
+      p1 = 0.751125544464943 ; // pi^{-1/4}, the normalization for H_0
       p2 = 0.0 ;
       for(int ii = 1; ii <= n; ii++){
         p3 = p2 ;
@@ -42,7 +43,7 @@ Rcpp::List ghQ::ghq(const int &n){
       }
     }
     x[i] = z ;
-    x[n - 1 - i] = z * -1.0 ;
+    x[n - 1 - i] = z * -1.0 ; // symmetry: nodes come in +/- pairs
     w[i] = 2 / std::pow(pp,2.0) ;
     w[n - 1 - i] = w[i] ;
   }
@@ -50,6 +51,7 @@ Rcpp::List ghQ::ghq(const int &n){
                             Rcpp::Named("w") = w);
 }
 
+// Replicates vecC (times)
 Rcpp::List ghQ::newList(const int& times,
                         arma::colvec& vecC){
 
@@ -63,6 +65,7 @@ Rcpp::List ghQ::newList(const int& times,
   return Rcpp::wrap( v ) ;
 }
 
+// Data frame to arma::mat
 arma::mat ghQ::df2mat(Rcpp::DataFrame& df){
   int nrows = df.nrows();
   int ncols = df.size();
@@ -73,6 +76,8 @@ arma::mat ghQ::df2mat(Rcpp::DataFrame& df){
   return mat;
 }
 
+// Builds multivariate ghQ grid, re-weighting against the N(0, I_q) prior,
+// and rotating by the Cholesky-like factor of Sigma (via eigen-decomposition)
 Rcpp::List ghQ::mvghq(const int& q, const int& nqp){
 
   Rcpp::Function expGrid("expand.grid");
@@ -80,6 +85,8 @@ Rcpp::List ghQ::mvghq(const int& q, const int& nqp){
   arma::colvec ghqP = Rcpp::as<arma::colvec>(ghQ1d["x"]);
   arma::colvec ghqW = Rcpp::as<arma::colvec>(ghQ1d["w"]);
 
+  // Reweight 1D-weights so the product grid integrates against N(0,1)
+  // Factor (2 pi)^{-1/2} * exp(x^2/2) converts weights (for integrand * exp(-x^2)) into weights for an N(0,1) prior.
   ghqW = ghqW * std::pow(2*arma::datum::pi, -0.5) % arma::exp(0.5*arma::pow(ghqP,2));
 
   Rcpp::List ghqPList = newList(q,ghqP);
@@ -99,6 +106,8 @@ Rcpp::List ghQ::mvghq(const int& q, const int& nqp){
 
   eig_sym(eigval, eigvec, Sigma);
 
+  // Rotate grid from N(0, I_q) coordinates to N(0, Sigma) coordinates via Sigma^{1/2} = eigvec * diag(sqrt(eigval)) * eigvec^T,
+  // Only left factor eigvec * diag(sqrt(eigval)) is applied (equivalent to a Cholesky-like square root).
   ghqPm = ((eigvec * arma::diagmat(arma::sqrt(eigval))) * ghqPm.t()).t();
 
   Rcpp::NumericMatrix ghqPo = Rcpp::wrap(ghqPm);
@@ -117,6 +126,7 @@ Rcpp::List ghQ::mvghq(const int& q, const int& nqp){
                             Rcpp::Named("weights") = ghqWo);
 }
 
+// Draw n iid samples from N(mu, sigma)
 arma::mat ghQ::mvrnorm_sim(const int n, arma::vec& mu, arma::mat& sigma){
   // int ncols = sigma.n_cols;
   // arma::vec eigenval;
@@ -139,6 +149,7 @@ arma::mat ghQ::mvrnorm_sim(const int n, arma::vec& mu, arma::mat& sigma){
   return arma::repmat(mu, 1, n).t() + Y * (eigm * teigm);
 }
 
+// An n x (q+1) matrix of latent variables + intercept
 Rcpp::NumericMatrix ghQ::get_simZ(const int& q, const int& n){
 
   arma::vec mu(q);

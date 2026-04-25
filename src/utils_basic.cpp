@@ -6,6 +6,7 @@ using namespace arma;
 
 // [[Rcpp::depends(RcppArmadillo)]]
 
+// Linear list of combinations of dist. parameter indices (k1,k2)
 arma::uword ixd2ll(int& k1, int& k2, int& K){
   if(K == 2){
     if((k1 == 0) & (k2 == 1)){return 0;}
@@ -16,7 +17,7 @@ arma::uword ixd2ll(int& k1, int& k2, int& K){
   } else if(K == 4){
     if((k1 == 0) & (k2 == 1)){return 0;}
     if((k1 == 0) & (k2 == 2)){return 1;}
-    if((k1 == 1) & (k2 == 2)){return 2;}
+    if((k1 == 0) & (k2 == 3)){return 2;}
     if((k1 == 1) & (k2 == 2)){return 3;}
     if((k1 == 1) & (k2 == 3)){return 4;}
     if((k1 == 2) & (k2 == 3)){return 5;}
@@ -24,6 +25,7 @@ arma::uword ixd2ll(int& k1, int& k2, int& K){
   return 0;
 }
 
+// Counts free coefficients in rb for each item i and dist. parameter k
 arma::mat count_b(arma::cube& rb, const int p){
   int K = rb.n_slices;
   arma::mat out(p,K);
@@ -40,6 +42,7 @@ arma::mat count_b(arma::cube& rb, const int p){
   return out;
 }
 
+// Cube b to matrix b
 arma::mat Cb2Mb(arma::cube& b){
   int K = b.n_slices, p = b.n_rows, q = b.n_cols ;
   arma::mat bt(b.slice(0).begin(),p,q,false) ;
@@ -50,6 +53,7 @@ arma::mat Cb2Mb(arma::cube& b){
   return bt;
 }
 
+// Cube b to vector b (free parameters)
 arma::vec Cb2Vb(arma::cube& b, arma::cube& rb){
   arma::vec rbV = arma::vectorise(Cb2Mb(rb), 1).t();
   arma::vec bV = arma::vectorise(Cb2Mb(b), 1).t();
@@ -58,6 +62,7 @@ arma::vec Cb2Vb(arma::cube& b, arma::cube& rb){
   return out ;
 }
 
+// Matrix b to cube b
 arma::cube Mb2Cb(arma::mat mb,
                  const int q,
                  const int K){
@@ -71,6 +76,7 @@ arma::cube Mb2Cb(arma::mat mb,
   return b;
 }
 
+// Vector b to cube b (fixes free parameters)
 arma::cube Vb2Cb(arma::vec& vb,
                  arma::cube& b,
                  arma::cube& rb,
@@ -84,50 +90,56 @@ arma::cube Vb2Cb(arma::vec& vb,
   return bC;
 }
 
+// Vector to matrix (column-major)
 arma::mat vec2mat(arma::vec& x, int nrow, int ncol){
   arma::mat y(x);
   y.reshape(nrow, ncol);
   return y;
 }
 
+// Fixes values at 0 and 1 to avoid overflow
 void fixY(arma::vec& y){
-  int n = y.n_elem;
-  for(int i = 0; i < n; i++){
-    if(y(i) == 1.0) y(i) = 1.0 - std::sqrt(arma::datum::eps);
-    if(y(i) == 0.0) y(i) = std::sqrt(arma::datum::eps);
-  }
+  y.elem(arma::find(y == 1.0)).fill(1.0 - std::sqrt(arma::datum::eps));
+  y.elem(arma::find(y == 0.0)).fill(std::sqrt(arma::datum::eps));
 }
 
+// Elementwise logistic (expit) function
 arma::vec expitvec(arma::vec eta){
   arma::vec expx = arma::exp(eta);
   return expx / (1.0 + expx);
 }
 
+// Elementwise logit function (inverse of expit)
 arma::vec logitvec(arma::vec mu){
   return arma::log(mu / (1.0 - mu));
 }
 
+// First derivative dmu/deta for the logit link
 arma::vec dMd1Evec(arma::vec eta){
   arma::vec expx = arma::exp(eta);
   return expx / arma::pow(1.0 + expx, 2);
 }
 
+// Second derivative for the logit link
 arma::vec dMd2Evec(arma::vec mu){
   return 1.0 - 2.0*mu ;
 }
 
+// Maps (mu, sigma) to the shape parameter alpha in beta pdf
 arma::vec geta(arma::vec& mu, arma::vec& sg){
   arma::vec a(mu.n_elem);
   a = mu % (1.0 - arma::pow(sg,2)) / arma::pow(sg,2);
   return a;
 }
 
+// Maps (mu, sigma) to the shape parameter beta in beta pdf
 arma::vec getb(arma::vec& mu, arma::vec& sg){
   arma::vec b(mu.n_elem);
   b = (1.0 - mu) % (1.0 - arma::pow(sg,2)) / arma::pow(sg,2);
   return b;
 }
 
+// Mills-ratio used in SN derivatives: zeta1(y) = phi(y) / Phi(y)
 arma::vec zeta1(arma::vec& y){
   int n = y.n_elem;
   arma::vec out(n);
@@ -141,11 +153,13 @@ arma::vec zeta1(arma::vec& y){
   return arma::exp(out) ;
 }
 
+// Second derivative of log(2*Phi(y)) used in SN second derivatives: -y*zeta1(y) - zeta1(y)^2
 arma::vec zeta2(arma::vec& y){
   arma::vec temp = zeta1(y);
   return -y % temp - arma::pow(temp,2) ;
 }
 
+// First derivative of SN wrt mu
 arma::mat d1mu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -158,6 +172,7 @@ arma::mat d1mu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// First derivative of SN wrt sigma
 arma::mat d1sg(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -170,6 +185,7 @@ arma::mat d1sg(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// First derivative of SN wrt nu
 arma::mat d1nu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -182,6 +198,7 @@ arma::mat d1nu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Second derivative of SN wrt mu (observed)
 arma::mat d2mu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -194,6 +211,7 @@ arma::mat d2mu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Second derivative of SN wrt sigma
 arma::mat d2sg(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -206,6 +224,7 @@ arma::mat d2sg(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Second derivative of SN wrt nu
 arma::mat d2nu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -218,6 +237,7 @@ arma::mat d2nu(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Cross-derivative of SN wrt mu-sigma
 arma::mat dcms(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -230,6 +250,7 @@ arma::mat dcms(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Cross-derivative of SN wrt mu-nu
 arma::mat dcmn(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -242,6 +263,7 @@ arma::mat dcmn(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Cross-derivative of SN wrt sigma-nu
 arma::mat dcsn(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -254,6 +276,7 @@ arma::mat dcsn(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Second derivative of SN wrt mu (expected)
 arma::mat d2muF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -267,6 +290,7 @@ arma::mat d2muF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Second derivative of SN wrt sigma (expected)
 arma::mat d2sgF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -280,6 +304,7 @@ arma::mat d2sgF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Second derivative of SN wrt nu (expected)
 arma::mat d2nuF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -293,6 +318,7 @@ arma::mat d2nuF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Cross-derivative of SN wrt mu-sigma (expected)
 arma::mat dcmsF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   double log2pi = std::sqrt(2/M_PI);
@@ -309,6 +335,7 @@ arma::mat dcmsF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Cross-derivative of SN wrt mu-nu (expected)
 arma::mat dcmnF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   double log2pi = std::sqrt(2/M_PI);
@@ -324,6 +351,7 @@ arma::mat dcmnF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Cross-derivative of SN wrt sigma-nu (expected)
 arma::mat dcsnF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   int n = y.n_elem, tqp = mu.n_elem;
   arma::mat out(n,tqp);
@@ -338,6 +366,7 @@ arma::mat dcsnF(arma::vec& y, arma::vec& mu, arma::vec& sigma, arma::vec& nu){
   return out ;
 }
 
+// Log-density of SN (direct parameterization)
 double dsn(double& x, double& mu, double& sigma, double& nu){
   double z = (x-mu)/sigma ;
   double d1 = -std::log(2*M_PI)/2 - std::log(sigma) - std::pow(z,2)/2 ;
@@ -345,6 +374,7 @@ double dsn(double& x, double& mu, double& sigma, double& nu){
   return d1 + d2 ;
 }
 
+// Random draw from SN (direct parameterization)
 double rsn(double& mu, double& sigma, double& nu){
   double delta = nu/std::sqrt(1+std::pow(nu,2));
   arma::vec tn(2);
@@ -355,6 +385,7 @@ double rsn(double& mu, double& sigma, double& nu){
   return mu + sigma*z  ;
 }
 
+// Maps nu_c (centered) to nu_d (direct) of SN distribution
 arma::vec nc2nd(arma::vec& nuc){
   double log2pi = std::sqrt(2/M_PI);
   double OoT = 1.0/3.0 ;
@@ -362,6 +393,7 @@ arma::vec nc2nd(arma::vec& nuc){
   return R / arma::sqrt(std::pow(log2pi,2) - (1-std::pow(log2pi,2)) * arma::pow(R,2));
 }
 
+// Maps sg_c (centered) to sg_d (direct) of SN distribution
 arma::vec sc2sd(arma::vec& sgc, arma::vec& nuc){
   double log2pi = std::sqrt(2/M_PI);
   arma::vec nud = nc2nd(nuc) ;
@@ -369,6 +401,7 @@ arma::vec sc2sd(arma::vec& sgc, arma::vec& nuc){
   return sgc / arma::sqrt(1-std::pow(log2pi,2) * arma::pow(R,2)) ;
 }
 
+// Maps mu_c (centered) to mu_d (direct) of SN distribution
 arma::vec mc2md(arma::vec& muc, arma::vec& sgc, arma::vec& nuc){
   double log2pi = std::pow(2/M_PI,0.5);
   arma::vec nud = nc2nd(nuc) ;
@@ -377,11 +410,13 @@ arma::vec mc2md(arma::vec& muc, arma::vec& sgc, arma::vec& nuc){
   return muc - log2pi * sgd % R;
 }
 
+// Maps (0,1) of proposed SN parametrization to nu_c (centered)
 arma::vec p2nuc(arma::vec& p){
   double g1max = std::sqrt(2)*(4-M_PI)/std::pow(M_PI-2,1.5);
   return(g1max*(2*p - 1));
 }
 
+// Jacobian d sigma_d / d sigma_c in the centred-to-direct SN reparametrization.
 arma::vec dsddsc(arma::vec& nuc){
   double log2pi = std::pow(2/M_PI,0.5);
   arma::vec nud = nc2nd(nuc);
@@ -389,6 +424,7 @@ arma::vec dsddsc(arma::vec& nuc){
   return 1 / arma::sqrt(1-std::pow(log2pi,2) * arma::pow(R,2)) ;
 }
 
+// Jacobian d nu_d / d nu_c in the centred-to-direct SN reparametrization.
 arma::vec dnddnc(arma::vec& nuc){
   double a = 2/(3*(4-M_PI));
   double log2pi = std::pow(2/M_PI,0.5);
@@ -398,6 +434,7 @@ arma::vec dnddnc(arma::vec& nuc){
   return a * (1/(t % arma::pow(R,2)) + (1-std::pow(log2pi,2))/arma::pow(t,3));
 }
 
+// Jacobian d mu_d / d sigma_c in the centred-to-direct SN reparametrization.
 arma::vec dmddsc(arma::vec& nuc){
   double log2pi = std::pow(2/M_PI,0.5);
   arma::vec nud = nc2nd(nuc);
@@ -405,6 +442,7 @@ arma::vec dmddsc(arma::vec& nuc){
   return - (log2pi * R) / arma::sqrt(1 - std::pow(log2pi,2) * arma::pow(R,2)) ;
 }
 
+// Jacobian d mu_d / d nu_c in the centred-to-direct SN reparametrization.
 arma::vec dmddnc(arma::vec& sgc, arma::vec& nuc){
   double log2pi = std::pow(2/M_PI,0.5);
   arma::vec nud = nc2nd(nuc);
@@ -412,6 +450,7 @@ arma::vec dmddnc(arma::vec& sgc, arma::vec& nuc){
   return - (sgc % (log2pi * R)) / (3*arma::sqrt(1 - std::pow(log2pi,2) * arma::pow(R,2)) % nuc) ;
 }
 
+// Jacobian d sigma_d / d nu_c in the centred-to-direct SN reparametrization
 arma::vec dsddnc(arma::vec& sgc, arma::vec& nuc){
   double log2pi = std::pow(2/M_PI,0.5);
   arma::vec nud = nc2nd(nuc);
@@ -424,6 +463,7 @@ arma::vec dsddnc(arma::vec& sgc, arma::vec& nuc){
   return d1 % d2 % d3;
 }
 
+// Posterior mean of Zm
 arma::mat Ezm(int q,
               arma::mat& Qpi,
               arma::vec& Qw,
@@ -441,6 +481,7 @@ arma::mat Ezm(int q,
   return zm ;
 }
 
+// Posterior covariance of Zm
 arma::cube Vzm(int q,
                arma::mat& Qpi,
                arma::vec& Qw,
@@ -460,6 +501,7 @@ arma::cube Vzm(int q,
   return Vm;
 }
 
+// Sum over m the quadratic form tr(G * Vm) + E[z_m]' G E[z_m] in SigmaGrad
 double EVzm(arma::mat& G,
             arma::mat& EZM,
             arma::cube& VZM){
@@ -471,6 +513,7 @@ double EVzm(arma::mat& G,
   return out ;
 }
 
+// Log-density of N(0, S) evaluated at each row of y; used inside fZY.
 arma::vec log_mvnN(arma::mat& y,
                    arma::mat& S){
 
@@ -483,13 +526,15 @@ arma::vec log_mvnN(arma::mat& y,
   arma::vec out(tqp);
 
   if(ok){
+    arma::mat iS = arma::inv_sympd(S);
     for(int m = 0; m < tqp ; m++){
-      out(m) = -0.5*(q*std::log(2*M_PI) + lS + arma::as_scalar(y.row(m)*(arma::inv_sympd(S)*y.row(m).t()))) ;
+      out(m) = -0.5*(q*std::log(2*M_PI) + lS + arma::as_scalar(y.row(m)*(iS*y.row(m).t()))) ;
     }
   }
   return out;
 }
 
+// Projection step for the Cholesky factor L
 void fixL(arma::mat& L, arma::mat& R){
   int q = L.n_rows;
   arma::vec dR = R.diag();
@@ -503,6 +548,8 @@ void fixL(arma::mat& L, arma::mat& R){
   }
 }
 
+// Maps the free lower-triangular entries of L to the corresponding entries of
+// R = LL' (for numerical Jacobian use).
 Rcpp::NumericVector chol2cor(Rcpp::NumericVector& vLi, int& q){
   int ncor = vLi.length();
   arma::vec vL(vLi.begin(),ncor,false,false);
@@ -515,6 +562,7 @@ Rcpp::NumericVector chol2cor(Rcpp::NumericVector& vLi, int& q){
   return Rcpp::wrap(out);
 }
 
+// Numerical Jacobian of chol2cor, used in SEs computation for R
 Rcpp::NumericMatrix Jchol(Rcpp::NumericVector& vLi,
                           int q) {
 
@@ -527,6 +575,8 @@ Rcpp::NumericMatrix Jchol(Rcpp::NumericVector& vLi,
   return out;
 }
 
+// Fix user-specified sign restrictions on the first free loading of each latent variable
+// flipping signs in b
 void fixb(arma::cube& b,
           arma::cube& rb,
           Rcpp::Nullable<Rcpp::NumericVector> c2fi = R_NilValue){
@@ -540,9 +590,7 @@ void fixb(arma::cube& b,
       if(idx.size() == 0){
         continue;
       } else{
-         // if(b(idx(0), c2fp(i), 0) < 0){
          if(arma::sign(b(idx(0), c2fp(i), 0)) !=  c2fs(i)){
-          // b.col(c2fp(i)) *= c2fs(i);
           b.col(c2fp(i)) *= -1.0;
         }
       }

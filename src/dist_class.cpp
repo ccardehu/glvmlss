@@ -11,6 +11,7 @@ using namespace boost::math;
 // [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::depends(BH)]]
 
+// Vector of n simulated units from distribution
 arma::vec Dist::sim(const int n,
                     int i,
                     arma::cube& b,
@@ -46,11 +47,11 @@ arma::vec Dist::sim(const int n,
     arma::uvec bsg0 = arma::find(bsg != 0) ;
     arma::vec mu = expitvec(Z.cols(bmu0)*bmu.elem(bmu0));
     arma::vec sg = expitvec(Z.cols(bsg0)*bsg.elem(bsg0));
-    arma::vec a = geta(mu,sg);
-    arma::vec b = getb(mu,sg);
+    arma::vec al = geta(mu,sg);
+    arma::vec be = getb(mu,sg);
 
     for(int idx = 0; idx < n; idx++){
-      res(idx) = R::rbeta(a(idx),b(idx));
+      res(idx) = R::rbeta(al(idx),be(idx));
     }
     return res;
   } else if(fam == "sn"){
@@ -76,13 +77,14 @@ arma::vec Dist::sim(const int n,
   } else return res;
 }
 
+// Matrix of (n x tqp) entries: log f_i(y_m | z_qp); row is NaN for missing entries
 arma::mat Dist::dy(const int i,
                    arma::mat& Yr,
-                   arma::mat& QP,
+                   arma::mat& Z,
                    arma::cube& b){
 
   arma::vec  Yc = Yr.col(i) ;
-  arma::mat  Z(QP) ;
+  // arma::mat  Z(QP) ;
 
   int n = Yc.size() ;
   int tqp = Z.n_rows ;
@@ -176,14 +178,15 @@ arma::mat Dist::dy(const int i,
   } else return pD;
 }
 
+// Cube of (n x tqp x D) 1st derivatives: d logf_i(y_m | z_qp) /d eta_d;
 arma::cube Dist::d1y(const int i,
                      arma::mat& Yr,
-                     arma::mat& QP,
+                     arma::mat& Z,
                      arma::cube& b){
 
   arma::vec  Yc = Yr.col(i) ;
   int n = Yc.size() ;
-  arma::mat  Z(QP) ;
+  // arma::mat  Z(QP) ;
   int tqp = Z.n_rows ;
 
   arma::cube D ;
@@ -296,29 +299,39 @@ arma::cube Dist::d1y(const int i,
     arma::mat D1S = d1sg(Yc,mud,sgd,nud);
     arma::mat D1N = d1nu(Yc,mud,sgd,nud);
 
-    arma::mat D1Ms = D1M * arma::diagmat(dmddsc(nuc)) ;
-    arma::mat D1Mn = D1M * arma::diagmat(dmddnc(sg,nuc)) ;
-    arma::mat D1Ss = D1S * arma::diagmat(dsddsc(nuc)) ;
-    arma::mat D1Sn = D1S * arma::diagmat(dsddnc(sg,nuc)) ;
-    D1N = D1N * arma::diagmat(dnddnc(nuc));
+    arma::vec v_dmddsc = dmddsc(nuc) ;
+    arma::vec v_dmddnc = dmddnc(sg,nuc) ;
+    arma::vec v_dsddsc = dsddsc(nuc) ;
+    arma::vec v_dsddnc = dsddnc(sg,nuc) ;
+    arma::vec v_dnddnc = dnddnc(nuc);
+
+    D1N.each_row() %= v_dnddnc.t();
+    arma::mat D1Ms = D1M.each_row() % v_dmddsc.t() ;
+    arma::mat D1Ss = D1S.each_row() % v_dsddsc.t() ;
+    arma::mat D1Mn = D1M.each_row() % v_dmddnc.t() ;
+    arma::mat D1Sn = D1S.each_row() % v_dsddnc.t() ;
+    arma::mat D1MsD1Ss = D1Ms + D1Ss ;
+    arma::mat D1MnD1SnD1N = D1Mn + D1Sn + D1N ;
 
     D.slice(0) = D1M ;
-    D.slice(1) = (D1Ms + D1Ss) * arma::diagmat(sg) ;
-    D.slice(2) = (D1Mn + D1Sn + D1N) * arma::diagmat(dnucdp * dXn);
+    D.slice(1) = D1MsD1Ss.each_row() % sg.t() ;
+    D.slice(2) = D1MnD1SnD1N.each_row() % (dnucdp * dXn.t());
+
     return D;
   } else return D;
 }
 
+// Cube of (n x tqp x D) 2nd derivatives: d^2 logf_i(y_m | z_qp) /(d eta_d)^2;
 arma::cube Dist::d2y(const int i,
                      arma::mat& Yr,
-                     arma::mat& QP,
+                     arma::mat& Z,
                      arma::cube& b,
                      const bool flagEIM,
                      arma::cube& d1Yi){
 
   arma::vec  Yc = Yr.col(i) ;
   int n = Yc.size() ;
-  arma::mat  Z(QP) ;
+  // arma::mat  Z(QP) ;
   int tqp = Z.n_rows ;
 
   arma::cube D ;
@@ -499,28 +512,41 @@ arma::cube Dist::d2y(const int i,
       arma::mat DcMN = dcmnF(Yc,mud,sgd,nud);
       arma::mat DcSN = dcsnF(Yc,mud,sgd,nud);
 
-      arma::mat D2Ms = D2M * arma::diagmat(dmddsc(nuc)) ;
-      arma::mat D2Mn = D2M * arma::diagmat(dmddnc(sg,nuc)) ;
-      arma::mat DcMSs1 = DcMS * arma::diagmat(dsddsc(nuc));
-      arma::mat DcMSs2 = DcMS * arma::diagmat(dmddsc(nuc));
-      arma::mat DcMSn1 = DcMS * arma::diagmat(dsddnc(sg,nuc));
-      arma::mat DcMSn2 = DcMS * arma::diagmat(dmddnc(sg,nuc));
-      arma::mat DcMNn1 = DcMN * arma::diagmat(dnddnc(nuc));
-      arma::mat DcMNn2 = DcMN * arma::diagmat(dmddnc(sg,nuc));
+      arma::vec v_dmddsc = dmddsc(nuc);
+      arma::vec v_dmddnc = dmddnc(sg,nuc) ;
+      arma::vec v_dsddsc = dsddsc(nuc) ;
+      arma::vec v_dsddnc = dsddnc(sg,nuc) ;
+      arma::vec v_dnddnc = dnddnc(nuc) ;
 
-      arma::mat D2Ss = D2S * arma::diagmat(dsddsc(nuc)) ;
-      arma::mat D2Sn = D2S * arma::diagmat(dsddnc(sg,nuc)) ;
-      arma::mat DcSNn1 = DcSN * arma::diagmat(dnddnc(nuc));
-      arma::mat DcSNn2 = DcSN * arma::diagmat(dsddnc(sg,nuc));
+      arma::mat D2Ms = D2M.each_row() % v_dmddsc.t() ;
+      arma::mat D2Mn = D2M.each_row() % v_dmddnc.t() ;
+      arma::mat DcMSs1 = DcMS.each_row() % v_dsddsc.t() ;
+      arma::mat DcMSs2 = DcMS.each_row() % v_dmddsc.t() ;
+      arma::mat DcMSn1 = DcMS.each_row() % v_dsddnc.t() ;
+      arma::mat DcMSn2 = DcMS.each_row() % v_dmddnc.t() ;
+      arma::mat DcMNn1 = DcMN.each_row() % v_dnddnc.t() ;
+      arma::mat DcMNn2 = DcMN.each_row() % v_dmddnc.t() ;
 
-      D2N = D2N * arma::diagmat(dnddnc(nuc)) ;
+      arma::mat D2Ss = D2S.each_row() % v_dsddsc.t() ;
+      arma::mat D2Sn = D2S.each_row() % v_dsddnc.t() ;
+      arma::mat DcSNn1 = DcSN.each_row() % v_dnddnc.t() ;
+      arma::mat DcSNn2 = DcSN.each_row() % v_dsddnc.t() ;
+
+      D2N.each_row() %= v_dnddnc.t() ;
+
+      arma::mat D2MsDcMSs1 = D2Ms + DcMSs1 ;
+      arma::mat DcMSs2D2Ss = DcMSs2 + D2Ss ;
+      arma::mat D2MnDcMSn1DcMNn1 = D2Mn + DcMSn1 + DcMNn1 ;
+      arma::mat DcMSn2D2SnDcSNn1 = DcMSn2 + D2Sn + DcSNn1 ;
+      arma::mat DcMNn2DcSNn2D2N = DcMNn2 + DcSNn2 + D2N ;
 
       D.slice(0) = D2M ;
-      D.slice(1) = ((D2Ms + DcMSs1) * arma::diagmat(dmddsc(nuc)) +
-                    (DcMSs2 + D2Ss) * arma::diagmat(dsddsc(nuc))) * arma::diagmat(arma::pow(sg,2)) ;
-      D.slice(2) = ((D2Mn + DcMSn1 + DcMNn1) * arma::diagmat(dmddnc(sg,nuc)) +
-                    (DcMSn2 + D2Sn + DcSNn1) * arma::diagmat(dsddnc(sg,nuc)) +
-                    (DcMNn2 + DcSNn2 + D2N) * arma::diagmat(dnddnc(nuc))) * arma::diagmat(arma::pow(dnucdp * d1Xn,2) ) ;
+      D.slice(1) = (D2MsDcMSs1.each_row() % v_dmddsc.t() +
+                    DcMSs2D2Ss.each_row() % v_dsddsc.t()) * arma::diagmat(arma::pow(sg,2)) ;
+      D.slice(2) = (D2MnDcMSn1DcMNn1.each_row() % v_dmddnc.t() +
+                    DcMSn2D2SnDcSNn1.each_row() % v_dsddnc.t() +
+                    DcMNn2DcSNn2D2N.each_row() % v_dnddnc.t()) * arma::diagmat(arma::pow(dnucdp * d1Xn,2) ) ;
+
       return D;
     } else {
       arma::mat D2M = d2mu(Yc,mud,sgd,nud);
@@ -530,43 +556,57 @@ arma::cube Dist::d2y(const int i,
       arma::mat DcMN = dcmn(Yc,mud,sgd,nud);
       arma::mat DcSN = dcsn(Yc,mud,sgd,nud);
 
-      arma::mat D2Ms = D2M * arma::diagmat(dmddsc(nuc)) ;
-      arma::mat D2Mn = D2M * arma::diagmat(dmddnc(sg,nuc)) ;
-      arma::mat DcMSs1 = DcMS * arma::diagmat(dsddsc(nuc));
-      arma::mat DcMSs2 = DcMS * arma::diagmat(dmddsc(nuc));
-      arma::mat DcMSn1 = DcMS * arma::diagmat(dsddnc(sg,nuc));
-      arma::mat DcMSn2 = DcMS * arma::diagmat(dmddnc(sg,nuc));
-      arma::mat DcMNn1 = DcMN * arma::diagmat(dnddnc(nuc));
-      arma::mat DcMNn2 = DcMN * arma::diagmat(dmddnc(sg,nuc));
+      arma::vec v_dmddsc = dmddsc(nuc);
+      arma::vec v_dmddnc = dmddnc(sg,nuc) ;
+      arma::vec v_dsddsc = dsddsc(nuc) ;
+      arma::vec v_dsddnc = dsddnc(sg,nuc) ;
+      arma::vec v_dnddnc = dnddnc(nuc) ;
 
-      arma::mat D2Ss = D2S * arma::diagmat(dsddsc(nuc)) ;
-      arma::mat D2Sn = D2S * arma::diagmat(dsddnc(sg,nuc)) ;
-      arma::mat DcSNn1 = DcSN * arma::diagmat(dnddnc(nuc));
-      arma::mat DcSNn2 = DcSN * arma::diagmat(dsddnc(sg,nuc));
+      arma::mat D2Ms = D2M.each_row() % v_dmddsc.t() ;
+      arma::mat D2Mn = D2M.each_row() % v_dmddnc.t() ;
+      arma::mat DcMSs1 = DcMS.each_row() % v_dsddsc.t() ;
+      arma::mat DcMSs2 = DcMS.each_row() % v_dmddsc.t() ;
+      arma::mat DcMSn1 = DcMS.each_row() % v_dsddnc.t() ;
+      arma::mat DcMSn2 = DcMS.each_row() % v_dmddnc.t() ;
+      arma::mat DcMNn1 = DcMN.each_row() % v_dnddnc.t() ;
+      arma::mat DcMNn2 = DcMN.each_row() % v_dmddnc.t() ;
 
-      D2N = D2N * arma::diagmat(dnddnc(nuc)) ;
+      arma::mat D2Ss = D2S.each_row() % v_dsddsc.t() ;
+      arma::mat D2Sn = D2S.each_row() % v_dsddnc.t() ;
+      arma::mat DcSNn1 = DcSN.each_row() % v_dnddnc.t() ;
+      arma::mat DcSNn2 = DcSN.each_row() % v_dsddnc.t() ;
+
+      D2N.each_row() %= v_dnddnc.t() ;
+
+      arma::mat D2MsDcMSs1 = D2Ms + DcMSs1 ;
+      arma::mat DcMSs2D2Ss = DcMSs2 + D2Ss ;
+      arma::mat D2MnDcMSn1DcMNn1 = D2Mn + DcMSn1 + DcMNn1 ;
+      arma::mat DcMSn2D2SnDcSNn1 = DcMSn2 + D2Sn + DcSNn1 ;
+      arma::mat DcMNn2DcSNn2D2N = DcMNn2 + DcSNn2 + D2N ;
 
       D.slice(0) = D2M ;
-      D.slice(1) = ((D2Ms + DcMSs1) * arma::diagmat(dmddsc(nuc)) +
-                    (DcMSs2 + D2Ss) * arma::diagmat(dsddsc(nuc))) * arma::diagmat(arma::pow(sg,2)) + d1Yi.slice(1) ;
-      D.slice(2) = ((D2Mn + DcMSn1 + DcMNn1) * arma::diagmat(dmddnc(sg,nuc)) +
-                    (DcMSn2 + D2Sn + DcSNn1) * arma::diagmat(dsddnc(sg,nuc)) +
-                    (DcMNn2 + DcSNn2 + D2N) * arma::diagmat(dnddnc(nuc))) * arma::diagmat(arma::pow(dnucdp * d1Xn,2))
-                    + (d1Yi.slice(2) * arma::diagmat(d2Xn)) ;
+      D.slice(1) = (D2MsDcMSs1.each_row() % v_dmddsc.t() +
+                    DcMSs2D2Ss.each_row() % v_dsddsc.t()) * arma::diagmat(arma::pow(sg,2)) + d1Yi.slice(1) ;
+      D.slice(2) = (D2MnDcMSn1DcMNn1.each_row() % v_dmddnc.t() +
+                    DcMSn2D2SnDcSNn1.each_row() % v_dsddnc.t() +
+                    DcMNn2DcSNn2D2N.each_row() % v_dnddnc.t()) * arma::diagmat(arma::pow(dnucdp * d1Xn,2))
+                    + (d1Yi.slice(2).each_row() % d2Xn.t()) ;
+
       return D;
     }
   } else return D;
 }
 
+// Cube of (n x tqp x D) cross-derivatves: d^2 logf_i(y_m | z_qp) /d eta_d1 d eta_d2;
 arma::cube Dist::dCy(const int i,
                      arma::mat& Yr,
-                     arma::mat& QP,
+                     arma::mat& Z,
                      arma::cube& b,
                      const bool flagEIM){
 
   arma::vec  Yc = Yr.col(i) ;
   int n = Yc.size() ;
-  arma::mat  Z(QP) ;
+  // arma::mat  Z(QP) ;
   int tqp = Z.n_rows ;
 
   arma::cube D ;
@@ -609,7 +649,6 @@ arma::cube Dist::dCy(const int i,
     return D;
   } else if(fam == "beta"){
     fixY(Yc);
-    // Yc.clamp(arma::datum::eps,1.0-arma::datum::eps);
     arma::vec bmu = b.slice(0).row(i).t() ;
     arma::vec bsg = b.slice(1).row(i).t() ;
     arma::uvec bmu0 = arma::find(bmu != 0) ; // add here if != nan
@@ -668,20 +707,31 @@ arma::cube Dist::dCy(const int i,
       arma::mat DcMN = dcmnF(Yc,mud,sgd,nud);
       arma::mat DcSN = dcsnF(Yc,mud,sgd,nud);
 
-      arma::mat D2Ms = D2M * arma::diagmat(dmddsc(nuc)) ;
-      arma::mat D2Mn = D2M * arma::diagmat(dmddnc(sg,nuc)) ;
-      arma::mat DcMSs1 = DcMS * arma::diagmat(dsddsc(nuc));
-      arma::mat DcMSn1 = DcMS * arma::diagmat(dsddnc(sg,nuc));
-      arma::mat DcMSn2 = DcMS * arma::diagmat(dmddnc(sg,nuc));
-      arma::mat DcMNn1 = DcMN * arma::diagmat(dnddnc(nuc));
+      arma::vec v_dmddsc = dmddsc(nuc);
+      arma::vec v_dmddnc = dmddnc(sg,nuc) ;
+      arma::vec v_dsddsc = dsddsc(nuc) ;
+      arma::vec v_dsddnc = dsddnc(sg,nuc) ;
+      arma::vec v_dnddnc = dnddnc(nuc) ;
 
-      arma::mat D2Sn = D2S * arma::diagmat(dsddnc(sg,nuc)) ;
-      arma::mat DcSNn1 = DcSN * arma::diagmat(dnddnc(nuc));
+      arma::mat D2Ms = D2M.each_row() % v_dmddsc.t() ;
+      arma::mat D2Mn = D2M.each_row() % v_dmddnc.t() ;
+      arma::mat DcMSs1 = DcMS.each_row() % v_dsddsc.t() ;
+      arma::mat DcMSn1 = DcMS.each_row() % v_dsddnc.t() ;
+      arma::mat DcMSn2 = DcMS.each_row() % v_dmddnc.t() ;
+      arma::mat DcMNn1 = DcMN.each_row() % v_dnddnc.t() ;
 
-      D.slice(0) = (D2Ms + DcMSs1) * arma::diagmat(sg) ;
-      D.slice(1) = (D2Mn + DcMSn1 + DcMNn1) * arma::diagmat(dXn) ;
-      D.slice(2) = ((D2Mn + DcMSn1 + DcMNn1) * arma::diagmat(dmddsc(nuc)) +
-                    (DcMSn2 + D2Sn + DcSNn1) * arma::diagmat(dsddsc(nuc))) * arma::diagmat(sg) * arma::diagmat(dnucdp * dXn);
+      arma::mat D2Sn = D2S.each_row() % v_dsddnc.t() ;
+      arma::mat DcSNn1 = DcSN.each_row() % v_dnddnc.t() ;
+
+      arma::mat D2MsDcMSs1 = D2Ms + DcMSs1 ;
+      arma::mat D2MnDcMSn1DcMNn1 = D2Mn + DcMSn1 + DcMNn1 ;
+      arma::mat DcMSn2D2SnDcSNn1 = DcMSn2 + D2Sn + DcSNn1 ;
+
+      D.slice(0) = D2MsDcMSs1.each_row() % sg.t() ;
+      D.slice(1) = D2MnDcMSn1DcMNn1.each_row() % dXn.t() ;
+      D.slice(2) = (D2MnDcMSn1DcMNn1.each_row() % v_dmddsc.t() +
+                    DcMSn2D2SnDcSNn1.each_row() % v_dsddsc.t()) * arma::diagmat(sg) * arma::diagmat(dnucdp * dXn);
+
       return D;
     } else {
       arma::mat D2M = d2mu(Yc,mud,sgd,nud);
@@ -690,20 +740,30 @@ arma::cube Dist::dCy(const int i,
       arma::mat DcMN = dcmn(Yc,mud,sgd,nud);
       arma::mat DcSN = dcsn(Yc,mud,sgd,nud);
 
-      arma::mat D2Ms = D2M * arma::diagmat(dmddsc(nuc)) ;
-      arma::mat D2Mn = D2M * arma::diagmat(dmddnc(sg,nuc)) ;
-      arma::mat DcMSs1 = DcMS * arma::diagmat(dsddsc(nuc));
-      arma::mat DcMSn1 = DcMS * arma::diagmat(dsddnc(sg,nuc));
-      arma::mat DcMSn2 = DcMS * arma::diagmat(dmddnc(sg,nuc));
-      arma::mat DcMNn1 = DcMN * arma::diagmat(dnddnc(nuc));
+      arma::vec v_dmddsc = dmddsc(nuc);
+      arma::vec v_dmddnc = dmddnc(sg,nuc) ;
+      arma::vec v_dsddsc = dsddsc(nuc) ;
+      arma::vec v_dsddnc = dsddnc(sg,nuc) ;
+      arma::vec v_dnddnc = dnddnc(nuc) ;
 
-      arma::mat D2Sn = D2S * arma::diagmat(dsddnc(sg,nuc)) ;
-      arma::mat DcSNn1 = DcSN * arma::diagmat(dnddnc(nuc));
+      arma::mat D2Ms = D2M.each_row() % v_dmddsc.t() ;
+      arma::mat D2Mn = D2M.each_row() % v_dmddnc.t() ;
+      arma::mat DcMSs1 = DcMS.each_row() % v_dsddsc.t() ;
+      arma::mat DcMSn1 = DcMS.each_row() % v_dsddnc.t() ;
+      arma::mat DcMSn2 = DcMS.each_row() % v_dmddnc.t() ;
+      arma::mat DcMNn1 = DcMN.each_row() % v_dnddnc.t() ;
 
-      D.slice(0) = (D2Ms + DcMSs1) * arma::diagmat(sg) ;
-      D.slice(1) = (D2Mn + DcMSn1 + DcMNn1) * arma::diagmat(dXn) ;
-      D.slice(2) = ((D2Mn + DcMSn1 + DcMNn1) * arma::diagmat(dmddsc(nuc)) +
-                    (DcMSn2 + D2Sn + DcSNn1) * arma::diagmat(dsddsc(nuc))) * (arma::diagmat(sg) * arma::diagmat(dnucdp * dXn));
+      arma::mat D2Sn = D2S.each_row() % v_dsddnc.t() ;
+      arma::mat DcSNn1 = DcSN.each_row() % v_dnddnc.t() ;
+
+      arma::mat D2MsDcMSs1 = D2Ms + DcMSs1 ;
+      arma::mat D2MnDcMSn1DcMNn1 = D2Mn + DcMSn1 + DcMNn1 ;
+      arma::mat DcMSn2D2SnDcSNn1 = DcMSn2 + D2Sn + DcSNn1 ;
+
+      D.slice(0) = D2MsDcMSs1.each_row() % sg.t() ;
+      D.slice(1) = D2MnDcMSn1DcMNn1.each_row() % dXn.t() ;
+      D.slice(2) = (D2MnDcMSn1DcMNn1.each_row() % v_dmddsc.t() +
+                    DcMSn2D2SnDcSNn1.each_row() % v_dsddsc.t()) * arma::diagmat(sg) * arma::diagmat(dnucdp * dXn);
       return D;
     }
   } else return D;

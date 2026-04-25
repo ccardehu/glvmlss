@@ -30,9 +30,12 @@ Rcpp::List glvmlss_rcpp(Rcpp::NumericMatrix& Yr,
   int EM_iL = control["EM.maxit"];
   int DM_iL = control["DM.maxit"];
 
+  // Build the quadrature at R
   ghQ Q(q,nqp,R);
+  // Build the posterior density fYZ at (b,R); computes llk and pD.
   fYZ fyz(Yr,famr,Q,b);
 
+  // EM-step
   if(EM_iL != 0){
     if(flagGD){
       EM_stepGD(Yr,famr,b,rb,rR,Q,fyz,control);
@@ -40,6 +43,7 @@ Rcpp::List glvmlss_rcpp(Rcpp::NumericMatrix& Yr,
       EM_step(Yr,famr,b,rb,rR,Q,fyz,control);
     }
   }
+  // DM-step
   if(DM_iL != 0) DM_step(Yr,famr,b,rb,rR,Q,fyz,control);
 
   arma::mat pD = fyz.get_pD();

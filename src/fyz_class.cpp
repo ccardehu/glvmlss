@@ -26,24 +26,16 @@ void fYZ::update(Rcpp::NumericMatrix& Yr,
     std::string fam = Rcpp::as<std::string>(famr[i]);
     Dist Y(fam) ;
     arma::mat dYi = Y.dy(i,Yc,Qp,b);
-    for(int ii = 0; ii < tqp; ii++){
-      for(int jj = 0; jj < n; jj++){
-        pD(jj,ii) += std::isnan(dYi(jj,ii)) ? 0.0 : dYi(jj,ii) ;
-      }
-    }
+    dYi.replace(arma::datum::nan, 0.0);
+    pD += dYi;
   }
 
- arma::vec Cm(n), llv(n);
-  for(int jj = 0; jj < n; jj++){
-   Cm(jj) = arma::max(pD.row(jj));
-   llv(jj) = arma::as_scalar(Cm(jj)) + arma::as_scalar(arma::log(arma::exp(pD.row(jj) - arma::as_scalar(Cm(jj))) * Qw));
-  }
-
+  arma::vec Cm = arma::max(pD, 1);
+  arma::mat pD_shift = pD.each_col() - Cm;
+  arma::vec llv = Cm + arma::log(arma::exp(pD_shift) * Qw);
   ll = arma::accu(llv);
-
-  pD.each_col() -= Cm ;
+  pD.each_col() -= llv ;
   pD = arma::exp(pD) ;
-  pD.each_col() /= arma::exp(llv - Cm);
 
 }
 

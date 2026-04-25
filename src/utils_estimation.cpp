@@ -13,6 +13,7 @@ using namespace Rcpp;
 using namespace arma;
 using namespace ens;
 
+// Computes score vector wrt b in EM step
 arma::vec d1ll(Rcpp::NumericMatrix& Yr,
                Rcpp::CharacterVector& famr,
                ghQ& Q,
@@ -24,7 +25,7 @@ arma::vec d1ll(Rcpp::NumericMatrix& Yr,
   arma::mat Yc(Yr.begin(),n,p,false);
   arma::mat Qp = Q.get_grid() ;
   arma::vec Qw = Q.get_weig() ;
-  int tqp = Qp.n_rows ;
+  // int tqp = Qp.n_rows ;
 
   arma::mat nbs = count_b(rb,p);
   int npars = arma::accu(nbs);
@@ -38,17 +39,10 @@ arma::vec d1ll(Rcpp::NumericMatrix& Yr,
     arma::cube d1Yi = Y.d1y(i,Yc,Qp,b);
     int K = d1Yi.n_slices;
     for(int kk = 0; kk < K; kk++){
-      arma::mat tmpb = b.slice(kk);
       arma::mat tmprb = rb.slice(kk);
       arma::mat tmpM = d1Yi.slice(kk);
-      arma::rowvec vec1(tqp) ;
-      for(int jj = 0; jj < n; jj++){
-        if(std::isnan(tmpM(jj,0))){
-          continue;
-        } else {
-          vec1 += tmpM.row(jj) % pD.row(jj) ;
-        }
-      }
+      tmpM.replace(arma::datum::nan, 0.0);
+      arma::rowvec vec1 = arma::sum(tmpM % pD, 0);
       arma::uvec idx1 = arma::find_nan(tmprb.row(i));
       arma::vec vec2 = ((vec1.t() % Qw).t() * Qp.cols(idx1)).t() ;
       arma::uvec idx2 = arma::regspace<arma::uvec>(mem, (mem + nbs(i,kk) - 1));
@@ -59,6 +53,8 @@ arma::vec d1ll(Rcpp::NumericMatrix& Yr,
   return sc;
 }
 
+// Computes Hessian wrt b in EM step
+// (Currently not in use)
 arma::mat d2ll_EM(Rcpp::NumericMatrix& Yr,
                   Rcpp::CharacterVector& famr,
                   ghQ& Q,
@@ -93,7 +89,6 @@ arma::mat d2ll_EM(Rcpp::NumericMatrix& Yr,
     }
 
     for(int k1 = 0; k1 < K; k1++){
-      arma::mat bk1 = b.slice(k1);
       arma::mat rbk1 = rb.slice(k1);
       arma::uvec idk1 = arma::find_nan(rbk1.row(i));
       arma::mat Qpk1 = Qp.cols(idk1) ;
@@ -112,15 +107,10 @@ arma::mat d2ll_EM(Rcpp::NumericMatrix& Yr,
 
       for(int k2 = k1; k2 < K; k2++){
         if(k2 == k1){
-          arma::cube h1(idk1.n_rows,idk1.n_rows,tqp);
-          for(int rr = 0; rr < tqp; rr++){
-            h1.slice(rr) = (Qpk1.row(rr).t() * Qpk1.row(rr)) * arma::as_scalar(veck1b(rr)) ;
-            hess(id1, id1) += h1.slice(rr);
-          }
+          hess(id1,id1) += Qpk1.t() * arma::diagmat(veck1b) * Qpk1;
           mem1 += nbs(i,k2);
           mem2 = mem1;
         } else {
-          arma::mat bk2 = b.slice(k2);
           arma::mat rbk2 = rb.slice(k2);
           arma::uvec idk2 = arma::find_nan(rbk2.row(i));
           arma::mat Qpk2 = Qp.cols(idk2) ;
@@ -137,13 +127,8 @@ arma::mat d2ll_EM(Rcpp::NumericMatrix& Yr,
             }
           }
           arma::vec veck2b = (veck2a.t() % Qw) ;
-
-          arma::cube h2(idk1.n_rows,idk2.n_rows,tqp);
-          for(int rr = 0; rr < tqp; rr++){
-            h2.slice(rr) = (Qpk1.row(rr).t() * Qpk2.row(rr)) * arma::as_scalar(veck2b(rr)) ;
-            hess(id1, id2) += h2.slice(rr);
-            hess(id2, id1) += h2.slice(rr).t();
-          }
+          hess(id1,id2) += Qpk1.t()*arma::diagmat(veck2b)*Qpk2;
+          hess(id2,id1) += Qpk2.t()*arma::diagmat(veck2b)*Qpk1;
           mem2 += nbs(i,k2);
         }
       }
@@ -152,6 +137,7 @@ arma::mat d2ll_EM(Rcpp::NumericMatrix& Yr,
   return hess;
 }
 
+// Single Newton/Fisher-scoring update for b in EM step
 arma::vec solve_EM(Rcpp::NumericMatrix& Yr,
                    Rcpp::CharacterVector& famr,
                    ghQ& Q,
@@ -185,7 +171,6 @@ arma::vec solve_EM(Rcpp::NumericMatrix& Yr,
     }
 
     for(int k1 = 0; k1 < K; k1++){
-      arma::mat bk1 = b.slice(k1);
       arma::mat rbk1 = rb.slice(k1);
       arma::uvec idk1 = arma::find_nan(rbk1.row(i));
       arma::mat Qpk1 = Qp.cols(idk1) ;
@@ -193,26 +178,17 @@ arma::vec solve_EM(Rcpp::NumericMatrix& Yr,
 
       arma::mat dYk0 = d1Yi.slice(k1);
       arma::mat dYk1 = d2Yi.slice(k1);
-      arma::rowvec veck0a(tqp), veck1a(tqp) ;
-      for(int jj = 0; jj < n; jj++){
-        if(std::isnan(dYk1(jj,0))){
-          continue;
-        } else {
-          veck0a += dYk0.row(jj) % pD.row(jj) ;
-          veck1a += dYk1.row(jj) % pD.row(jj) ;
-        }
-      }
+      dYk0.replace(arma::datum::nan, 0.0);
+      dYk1.replace(arma::datum::nan, 0.0);
+      arma::rowvec veck0a = arma::sum(dYk0 % pD, 0);
+      arma::rowvec veck1a = arma::sum(dYk1 % pD, 0);
       arma::vec veck0b = (veck0a.t() % Qw) ;
       arma::vec veck1b = (veck1a.t() % Qw) ;
 
       for(int k2 = k1; k2 < K; k2++){
         if(k2 == k1){
-          for(int rr = 0; rr < tqp; rr++){
-            // Update for score vector
-            sc(id1) += Qpk1.row(rr).t() * arma::as_scalar(veck0b(rr)) ;
-            // Update for information matrix (complete log-likelihood / EM)
-            hess(id1, id1) += (Qpk1.row(rr).t() * Qpk1.row(rr)) * arma::as_scalar(veck1b(rr)) ;
-          }
+          sc(id1) += Qpk1.t()*veck0b;
+          hess(id1,id1) += Qpk1.t()*arma::diagmat(veck1b)*Qpk1;
           mem1 += nbs(i,k2);
           mem2 = mem1;
         } else {
@@ -224,20 +200,11 @@ arma::vec solve_EM(Rcpp::NumericMatrix& Yr,
 
           arma::uword idH = ixd2ll(k1,k2,K);
           arma::mat dYk2 = dCYi.slice(idH);
-          arma::rowvec veck2a(tqp) ;
-          for(int jj = 0; jj < n; jj++){
-            if(std::isnan(dYk2(jj,0))){
-              continue;
-            } else {
-              veck2a += dYk2.row(jj) % pD.row(jj) ;
-            }
-          }
+          dYk2.replace(arma::datum::nan, 0.0);
+          arma::rowvec veck2a = arma::sum(dYk2 % pD, 0);
           arma::vec veck2b = (veck2a.t() % Qw) ;
-
-          for(int rr = 0; rr < tqp; rr++){
-            hess(id1, id2) += (Qpk1.row(rr).t() * Qpk2.row(rr)) * arma::as_scalar(veck2b(rr)) ;
-            hess(id2, id1) += (Qpk1.row(rr).t() * Qpk2.row(rr)).t() * arma::as_scalar(veck2b(rr)) ;
-          }
+          hess(id1,id2) += Qpk1.t()*arma::diagmat(veck2b)*Qpk2;
+          hess(id2,id1) += Qpk2.t()*arma::diagmat(veck2b)*Qpk1;
           mem2 += nbs(i,k2);
         }
       }
@@ -246,6 +213,7 @@ arma::vec solve_EM(Rcpp::NumericMatrix& Yr,
   return arma::solve(hess,sc, solve_opts::fast + solve_opts::likely_sympd) ;
 }
 
+// Gradient wrt L (Cholesky decomp of Sigma)
 arma::mat SigmaGrad(ghQ& Q, fYZ& fyz,
                     arma::uvec& Li, arma::mat& L){
 
@@ -273,11 +241,11 @@ arma::mat SigmaGrad(ghQ& Q, fYZ& fyz,
     arma::mat G = SiD*L.t()*iS;
     grad(i) = -n*arma::trace(L.t()*SiD) + EVzm(G,EZm,VZm);
   }
-
   arma::mat out(grad);
   return out ;
 }
 
+// Expected complete-data log-prior sum (used as objective for L-update)
 double fZY(ghQ& Q, fYZ& fyz){
 
   arma::mat Sig = Q.get_sigm();
@@ -287,12 +255,14 @@ double fZY(ghQ& Q, fYZ& fyz){
 
   int n = pD.n_rows ;
   double out = 0.0 ;
+  arma::vec logQpS = log_mvnN(Qpi,Sig);
   for(int m = 0; m < n; m++){
-    out += arma::accu(log_mvnN(Qpi,Sig) % pD.row(m).t() % Qw);
+    out += arma::accu(logQpS % pD.row(m).t() % Qw);
   }
   return out;
 }
 
+// L-BFGS wrapper for L; used by update_sigm
 class opL {
   // Private class members
 private:
@@ -336,6 +306,7 @@ public:
 
 };
 
+// Updates Sigma = LL.t() via L-BFGS
 void update_sigm(ghQ& Q, fYZ& fyz, arma::mat& rR){
 
   opL optL(Q,fyz,rR);
@@ -346,6 +317,7 @@ void update_sigm(ghQ& Q, fYZ& fyz, arma::mat& rR){
   Q.update();
 }
 
+// Updates Sigma = LL.t() via GD (single step)
 void update_sigmGD(ghQ& Q, fYZ& fyz, arma::mat& rR, double& SS){
 
   arma::mat Sig = Q.get_sigm();
@@ -370,6 +342,7 @@ void update_sigmGD(ghQ& Q, fYZ& fyz, arma::mat& rR, double& SS){
   Q.update();
 }
 
+// Computes SEs via outer product of gradients
 Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
                Rcpp::CharacterVector& famr,
                ghQ& Q,
@@ -401,20 +374,14 @@ Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
     arma::cube d1Yi = Y.d1y(i,Yc,Qp,b);
     int K = d1Yi.n_slices;
     for(int k = 0; k < K; k++){
-      arma::mat tmpb = b.slice(k);
       arma::mat tmprb = rb.slice(k);
       arma::mat tmpM = d1Yi.slice(k);
       arma::uvec idx1 = arma::find_nan(tmprb.row(i));
       arma::mat Zk = Qp.cols(idx1);
-      for(int m = 0; m < n; m++){
-        if(std::isnan(tmpM(m,0))){
-          continue;
-        } else {
-          arma::rowvec vec1 = tmpM.row(m) % pD.row(m) % Qw.t();
-          arma::vec vec2 = (vec1 * Zk).t();
-          sc(arma::span(mem, (mem + nbs(i,k) - 1)),m) = vec2 ;
-        }
-      }
+      arma::mat mat1 = tmpM % pD;
+      mat1.each_row() %= Qw.t();
+      arma::mat mat2 = (mat1 * Zk).t();
+      sc(arma::span(mem, mem + nbs(i,k) - 1), arma::span::all) = mat2;
       mem += nbs(i,k);
     }
   }
@@ -454,49 +421,10 @@ Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
     SSt.zeros();
   }
 
-  // ********
-  // Original
-  // for(int i = 0; i < npars + ncor; i++){
-  //   for(int j = 0; j < npars + ncor; j++){
-  //     for(int m = 0; m < n; m++){
-  //       SSt(i,j) += (std::isnan(scout(i,m)) | std::isnan(scout(j,m))) ? 0.0 : arma::as_scalar(scout(i,m)) * arma::as_scalar(scout(j,m));
-  //     }
-  //   }
-  // }
-  // ********
-
-  // *************
-  // Temporary fix
-  for(int i = 0; i < npars; i++){
-    for(int j = 0; j < npars; j++){
-      for(int m = 0; m < n; m++){
-        SSt(i,j) += (std::isnan(scout(i,m)) | std::isnan(scout(j,m))) ? 0.0 : arma::as_scalar(scout(i,m)) * arma::as_scalar(scout(j,m));
-      }
-    }
-  }
-  if(FLAGCORLV){
-    for(int i = npars; i < npars + ncor; i++){
-      for(int j = npars; j < npars + ncor; j++){
-        for(int m = 0; m < n; m++){
-          SSt(i,j) += (std::isnan(scout(i,m)) | std::isnan(scout(j,m))) ? 0.0 : arma::as_scalar(scout(i,m)) * arma::as_scalar(scout(j,m));
-        }
-      }
-    }
-  }
-  // *************
-
-  // ********
-  // Original
-  // arma::mat iSSt = arma::inv(SSt);
-  // arma::uvec idxb = arma::regspace<arma::uvec>(0, npars-1);
-  // arma::mat iSStb = iSSt(idxb,idxb);
-  // ********
-
-  // *************
-  // Temporary fix
+  scout.replace(arma::datum::nan, 0.0);
+  SSt = scout * scout.t();
   arma::uvec idxb = arma::regspace<arma::uvec>(0, npars-1);
   arma::mat iSStb = arma::inv(SSt(idxb,idxb));
-  // *************
 
   arma::vec seb = arma::sqrt(arma::diagvec(iSStb));
 
@@ -510,15 +438,7 @@ Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
 
     int nPhi = q*(q+1)/2;
     arma::uvec idxL = arma::regspace<arma::uvec>(npars, npars+ncor-1);
-    // ********
-    // Original
-    // arma::mat iSStL = iSSt(idxL,idxL);
-    // ********
-
-    // *************
-    // Temporary fix
     arma::mat iSStL = arma::inv(SSt(idxL,idxL));
-    // *************
 
     Rcpp::NumericVector vLtemp = Rcpp::NumericVector(vL.begin(),vL.end());
     Rcpp::NumericMatrix dLdRtemp = Jchol(vLtemp,q);
@@ -540,6 +460,7 @@ Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
   }
 }
 
+// EM-step updates on b + L-BFGS updates on Sigma (if corLV).
 void EM_step(Rcpp::NumericMatrix& Yr,
              Rcpp::CharacterVector& famr,
              arma::cube& b,
@@ -554,7 +475,6 @@ void EM_step(Rcpp::NumericMatrix& Yr,
   bool flagFISHER = control["Fisher"], flagVERBO = control["verbose"];
   bool flagCORLV = control["estim.R"] ;
   double tol = control["tolerance"] ;
-  // double LR = control["LR"];
   Rcpp::Nullable<Rcpp::NumericVector> c2fi = control["sign.restr.b"];
 
   int q = Q.get_q();
@@ -590,6 +510,7 @@ void EM_step(Rcpp::NumericMatrix& Yr,
   }
 }
 
+// EM-step updates on b and Sigma (if corLV).
 void EM_stepGD(Rcpp::NumericMatrix& Yr,
                Rcpp::CharacterVector& famr,
                arma::cube& b,
@@ -660,6 +581,7 @@ void EM_stepGD(Rcpp::NumericMatrix& Yr,
   }
 }
 
+// L-BFGS wrapper for b; used in DM_step
 class mLLK {
   // Private class members
 private:
@@ -700,6 +622,7 @@ public:
 
 };
 
+// Direct maximization step via L-BFGS
 void DM_step(Rcpp::NumericMatrix& Yr,
              Rcpp::CharacterVector& famr,
              arma::cube& b,
@@ -756,6 +679,7 @@ void DM_step(Rcpp::NumericMatrix& Yr,
   }
 }
 
+// Factor scores (EAP)
 arma::mat fscores(ghQ& Q, arma::mat& pD){
 
   arma::mat Qpi = Q.get_poin();
