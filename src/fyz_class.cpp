@@ -18,7 +18,6 @@ void fYZ::update(Rcpp::NumericMatrix& Yr,
   arma::mat Yc(Yr.begin(),n,p,false);
   arma::mat Qp = Q.get_grid() ;
   arma::vec Qw = Q.get_weig() ;
-  int tqp = Qp.n_rows ;
 
   pD.fill(0.0);
 

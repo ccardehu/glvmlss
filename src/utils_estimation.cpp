@@ -27,7 +27,7 @@ arma::vec d1ll(Rcpp::NumericMatrix& Yr,
   arma::vec Qw = Q.get_weig() ;
   // int tqp = Qp.n_rows ;
 
-  arma::mat nbs = count_b(rb,p);
+  arma::mat nbs = count_b(rb);
   int npars = arma::accu(nbs);
 
   arma::vec sc(npars);
@@ -69,7 +69,7 @@ arma::mat d2ll_EM(Rcpp::NumericMatrix& Yr,
   arma::vec Qw = Q.get_weig() ;
   int tqp = Qp.n_rows ;
 
-  arma::mat nbs = count_b(rb,p);
+  arma::mat nbs = count_b(rb);
   int npars = arma::accu(nbs);
 
   arma::mat hess(npars, npars);
@@ -150,9 +150,8 @@ arma::vec solve_EM(Rcpp::NumericMatrix& Yr,
   arma::mat Yc(Yr.begin(),n,p,false);
   arma::mat Qp = Q.get_grid() ;
   arma::vec Qw = Q.get_weig() ;
-  int tqp = Qp.n_rows ;
 
-  arma::mat nbs = count_b(rb,p);
+  arma::mat nbs = count_b(rb);
   int npars = arma::accu(nbs);
 
   arma::vec sc(npars);
@@ -358,7 +357,7 @@ Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
   arma::vec Qw = Q.get_weig() ;
   int q = Q.get_q() ;
 
-  arma::mat nbs = count_b(rb,p);
+  arma::mat nbs = count_b(rb);
   int npars = arma::accu(nbs), ncor = 0 ;
 
   arma::mat SSt(npars,npars,arma::fill::zeros) ;
@@ -430,7 +429,7 @@ Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
 
   if(FLAGCORLV){
     arma::cube SEb(arma::size(b),arma::fill::zeros);
-    SEb = Vb2Cb(seb,SEb,rb,q);
+    SEb = Vb2Cb(seb,SEb,rb);
 
     arma::mat SER(q,q, arma::fill::zeros);
     arma::uvec Ri = arma::trimatl_ind(arma::size(SER));
@@ -454,7 +453,7 @@ Rcpp::List SEs(Rcpp::NumericMatrix& Yr,
                               Rcpp::Named("K") = iSStb.n_rows + idxR.n_elem) ;
   } else {
     arma::cube SEb(arma::size(b),arma::fill::zeros);
-    SEb = Vb2Cb(seb,SEb,rb,q);
+    SEb = Vb2Cb(seb,SEb,rb);
     return Rcpp::List::create(Rcpp::Named("seb") = SEb,
                               Rcpp::Named("K") = iSStb.n_rows) ;
   }
@@ -477,7 +476,7 @@ void EM_step(Rcpp::NumericMatrix& Yr,
   double tol = control["tolerance"] ;
   Rcpp::Nullable<Rcpp::NumericVector> c2fi = control["sign.restr.b"];
 
-  int q = Q.get_q();
+  // int q = Q.get_q();
   arma::vec llK(iL + 1, fill::zeros) ;
   llK(0) = fyz.get_ll();
   arma::mat pD = fyz.get_pD();
@@ -487,7 +486,7 @@ void EM_step(Rcpp::NumericMatrix& Yr,
 
     if (i % 2 == 0) Rcpp::checkUserInterrupt();
     Vb -= solve_EM(Yr,famr,Q,b,rb,pD,flagFISHER);
-    b = Vb2Cb(Vb,b,rb,q);
+    b = Vb2Cb(Vb,b,rb);
     fixb(b,rb,c2fi);
 
     if(flagCORLV & (i % upR == 0)) update_sigm(Q,fyz,rR);
@@ -527,7 +526,7 @@ void EM_stepGD(Rcpp::NumericMatrix& Yr,
   double LR = control["LR"];
   Rcpp::Nullable<Rcpp::NumericVector> c2fi = control["sign.restr.b"];
 
-  int q = Q.get_q();
+  // int q = Q.get_q();
   arma::vec llK(iL + 1, fill::zeros) ;
   llK(0) = fyz.get_ll();
   arma::mat pD = fyz.get_pD();
@@ -546,10 +545,10 @@ void EM_stepGD(Rcpp::NumericMatrix& Yr,
       countEM ++;
     } while (countEM < 6);
 
-    arma::cube bnew = Vb2Cb(Vb,b,rb,q);
+    arma::cube bnew = Vb2Cb(Vb,b,rb);
     fixb(bnew,rb,c2fi);
 
-    if(flagCORLV & (i % upR == 0)) update_sigmGD(Q,fyz,rR,LR);
+    if(flagCORLV && ((i % upR) == 0)) update_sigmGD(Q,fyz,rR,LR);
 
     fyz.update(Yr,famr,Q,bnew);
     llK(i+1) = fyz.get_ll();
@@ -568,7 +567,7 @@ void EM_stepGD(Rcpp::NumericMatrix& Yr,
       continue;
     }
 
-    if(flagVERBO & (i % 10 == 0) ){
+    if(flagVERBO && ((i % 10) == 0) ){
       if(i == 10) Rcpp::Rcout << "\n EM iteration (GD-update): " << i << " (llk: " << std::to_string(llK(i)) <<", LR updates: " << LRup << ")";
       else Rcpp::Rcout << "\r EM iteration (GD-update): " << i << " (llk: " << std::to_string(llK(i)) <<", LR updates: " << LRup << ")";
     }
@@ -605,9 +604,9 @@ public:
   double EvaluateWithGradient(const arma::mat& Vb, arma::mat& grad){
 
     Rcpp::checkUserInterrupt();
-    int q = Q.get_q();
+    // int q = Q.get_q();
     arma::vec tVb(Vb);
-    b = Vb2Cb(tVb,b,rb,q);
+    b = Vb2Cb(tVb,b,rb);
     fyz.update(Yr,famr,Q,b);
     arma::mat pD = fyz.get_pD();
     arma::vec tgr1 = -d1ll(Yr,famr,Q,b,rb,pD);

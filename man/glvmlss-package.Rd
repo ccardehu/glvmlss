@@ -10,5 +10,10 @@ Functions for fitting Generalized Latent Variable Models for Location, Scale, an
 \author{
 \strong{Maintainer}: Camilo Cárdenas-Hurtado \email{c.a.cardenas-hurtado@lse.ac.uk} (\href{https://orcid.org/0009-0003-1073-0912}{ORCID})
 
+Authors:
+\itemize{
+  \item Camilo Cárdenas-Hurtado \email{c.a.cardenas-hurtado@lse.ac.uk} (\href{https://orcid.org/0009-0003-1073-0912}{ORCID})
+}
+
 }
 \keyword{internal}

@@ -4,7 +4,7 @@
 \alias{glvmlss}
 \title{Fit a Generalized latent variable model for location, scale, and shape parameters.}
 \usage{
-glvmlss <- function(data, family,
+glvmlss = function(data, family,
                     mu.eq = ~ Z1, sg.eq = NULL,
                     nu.eq = NULL, ta.eq = NULL,
                     control = list(), ...)
@@ -92,12 +92,12 @@ The argument \code{...} can be used to pass elements directly to the list \code{
 }
 \examples{
 library(glvmlss)
-data <- ANES2020[,1:8]
+data = ANES2020[,1:8]
 p = ncol(data)
-famt <- rep("beta",p)
+famt = rep("beta",p)
 
 # A heteroscedastic Beta factor model
-mod1 <- glvmlss::glvmlss(data = data, family = famt, mu.eq = ~ Z1, sg.eq = ~ Z1,
+mod1 = glvmlss::glvmlss(data = data, family = famt, mu.eq = ~ Z1, sg.eq = ~ Z1,
                          EM.maxit = 30, DM.maxit = 300, nQP = 40,"verbose" = T)
 
 }

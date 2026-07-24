@@ -67,7 +67,7 @@
 #'
 #' The argument \code{...} can be used to pass elements directly to the list \code{control}, without explicitly defining the latter.
 #'
-#' @usage glvmlss <- function(data, family,
+#' @usage glvmlss = function(data, family,
 #'                     mu.eq = ~ Z1, sg.eq = NULL,
 #'                     nu.eq = NULL, ta.eq = NULL,
 #'                     control = list(), ...)
@@ -76,34 +76,60 @@
 #' @export
 #' @examples
 #' library(glvmlss)
-#' data <- ANES2020[,1:8]
+#' data = ANES2020[,1:8]
 #' p = ncol(data)
-#' famt <- rep("beta",p)
+#' famt = rep("beta",p)
 #'
 #' # A heteroscedastic Beta factor model
-#' mod1 <- glvmlss::glvmlss(data = data, family = famt, mu.eq = ~ Z1, sg.eq = ~ Z1,
+#' mod1 = glvmlss::glvmlss(data = data, family = famt, mu.eq = ~ Z1, sg.eq = ~ Z1,
 #'                          EM.maxit = 30, DM.maxit = 300, nQP = 40,"verbose" = T)
 #'
-glvmlss <- function(data, family,
-                    mu.eq = ~ Z1, sg.eq = NULL,
-                    nu.eq = NULL, ta.eq = NULL,
-                    control = list(), ...){
+glvmlss = function(data, family,
+                   mu.eq = ~ Z1, sg.eq = NULL,
+                   nu.eq = NULL, ta.eq = NULL,
+                   X = NULL,
+                   control = list(), ...){
 
-  Y <- as.matrix(data)
-  form <- pr_form(mu.eq, sg.eq, nu.eq, ta.eq)
-  q <- pr_q(form)
-  control <- pr_control(control,q, ...)
-  bR <- pr_bR(Y,family,form,control,q)
-  bcube <- bR$b
-  rbcube <- bR$rb
-  Rmat <- bR$R
-  rRmat <- bR$rR
-  out <- glvmlss_rcpp(Yr = Y,famr = family,q = q,b = bcube[], rb = rbcube[], R = Rmat[], rR = rRmat[], control = control)
-  dimnames(out$b) <- dimnames(out$seb) <- dimnames(bcube)
-  dimnames(out$R) <- dimnames(Rmat)
-  if(!is.null(out$seR)) dimnames(out$seR) <- dimnames(Rmat)
-  colnames(out$Z) <- paste0("Z",1:q)
-  out$Z <- as.data.frame(out$Z)
+  Y = as.matrix(data)
+  family = prep_family(family)
+  form = prep_form(mu.eq, sg.eq, nu.eq, ta.eq, family)
+  vars = prep_vars(form)
+  control$q = vars$q
+  control = prep_control_fit(control, ...)
+  if(!is.null(X) && !is.matrix(X)) X = as.matrix(X)
+  if(!is.null(X) && length(vars$xvars) == 0) X = NULL
+  zn = prep_z_fit(Y,family,form,control,X)
+  pars = prep_pars_fit(Y,family,form,control,vars,zn,X)
+
+  if(!is.null(control$seed)) set.seed(control$seed)
+  if(control$method == "sa"){
+    out = glvmlss_fit_sa_rcpp(Yr = Y, famr = family,
+                              b = pars$b[], rb = pars$rb[],
+                              R = pars$R[], rR = pars$rR[],
+                              mur = pars$mu[],
+                              control = control,
+                              fmat = vars$zxmat[],
+                              Z = zn[], Xr = X)
+  } else if(control$method == "ghq"){
+    out = glvmlss_fit_gq_rcpp(Yr = Y,
+                              famr = family,
+                              q = vars$q,
+                              b = pars$b[],
+                              rb = pars$rb[],
+                              R = pars$R[],
+                              rR = pars$rR[],
+                              control = control)
+    dimnames(out$b) = dimnames(out$seb) = dimnames(pars$b)
+    dimnames(out$R) = dimnames(pars$R)
+    if(!is.null(out$seR)) dimnames(out$seR) = dimnames(pars$R)
+    colnames(out$Z) = paste0("Z",1:vars$q)
+    out$Z = as.data.frame(out$Z)
+    # if(!is.null(X)){
+    #   colnames(out$X) = vars$xvars
+    #   out$X = as.data.frame(out$X)
+    # }
+  }
+  class(out) = c("glvmlss")
   return(out)
 }
 
@@ -148,7 +174,7 @@ glvmlss <- function(data, family,
 #'
 #' The argument \code{...} can be used to pass elements directly to the list \code{control}, without explicitly defining the latter.
 #'
-#' @usage glvmlss_sim <- function(n, family,
+#' @usage glvmlss_sim = function(n, family,
 #'                         mu.eq = ~ Z1, sg.eq = NULL,
 #'                         nu.eq = NULL, ta.eq = NULL,
 #'                         control = list(), ...)
@@ -167,55 +193,69 @@ glvmlss <- function(data, family,
 #'
 #' # Population (true) factor loadings
 #' lc = array(0,dim = c(2*p,3,3))
-#' lc[1:p,1,1] <- c( .19,  .30,  .42,  .45, 1.00,  .16,  .65,  .58)
-#' lc[1:p,2,1] <- c(-.17, -.24, -.25, -.34, -.36, -.36, -.35, -.30)
-#' lc[1:p,1,2] <- c(-.95, -.89, -.61, -.87, -.68, -.97,-1.15, -.90)
-#' lc[1:p,2,2] <- c( .03,  .10,  .08,  .05, -.14, -.03,  .04,  .02)
-#' lc[1:p,1,3] <- c( .63, 1.56,-1.07,-1.45,-1.04,  .10,  .36,  .30)
-#' lc[1:p,2,3] <- c( .03,  .78, -.81,  .33,  .32,  .89,  .58, -.36)
-#' lc[(p+1):(2*p),1,1] <- c( .64, -.47, -.04, -.69,-2.85, -.91,-4.84,-2.73)
-#' lc[(p+1):(2*p),3,1] <- c( .78, 1.03, 1.95,  .96, 2.28,  .32, 2.53, 1.46)
+#' lc[1:p,1,1] = c( .19,  .30,  .42,  .45, 1.00,  .16,  .65,  .58)
+#' lc[1:p,2,1] = c(-.17, -.24, -.25, -.34, -.36, -.36, -.35, -.30)
+#' lc[1:p,1,2] = c(-.95, -.89, -.61, -.87, -.68, -.97,-1.15, -.90)
+#' lc[1:p,2,2] = c( .03,  .10,  .08,  .05, -.14, -.03,  .04,  .02)
+#' lc[1:p,1,3] = c( .63, 1.56,-1.07,-1.45,-1.04,  .10,  .36,  .30)
+#' lc[1:p,2,3] = c( .03,  .78, -.81,  .33,  .32,  .89,  .58, -.36)
+#' lc[(p+1):(2*p),1,1] = c( .64, -.47, -.04, -.69,-2.85, -.91,-4.84,-2.73)
+#' lc[(p+1):(2*p),3,1] = c( .78, 1.03, 1.95,  .96, 2.28,  .32, 2.53, 1.46)
 #'
 #' # Population (true) factor correlation matrix
-#' R <- matrix(c(1,-0.28,-0.28,1),2)
+#' R = matrix(c(1,-0.28,-0.28,1),2)
 #'
 #' # Identification restrictions
-#' ires <- array(NA,dim = c(2*p,3,3))
-#' ires[1:p,3,1:3] <- 0
-#' ires[(p+1):(2*p),2,1] <- 0
-#' ires[(p+1):(2*p),,2:3] <- 0
+#' ires = array(NA,dim = c(2*p,3,3))
+#' ires[1:p,3,1:3] = 0
+#' ires[(p+1):(2*p),2,1] = 0
+#' ires[(p+1):(2*p),,2:3] = 0
 #'
 #' # Sample size
 #' n = 3000
 #'
 #' # Simulate data
-#' mod0 <- glvmlss::glvmlss_sim(n = n, family = faml, mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
+#' mod0 = glvmlss::glvmlss_sim(n = n, family = faml, mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
 #'                              start.b = lc, start.R = R,
 #'                              restr.b = ires, restr.R = matrix(c(1,NA,NA,1),2))
 #' \dontrun{
 #' # Fit the model:
-#' mod1 <- glvmlss::glvmlss(data = mod0$Y,family = faml,mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
+#' mod1 = glvmlss::glvmlss(data = mod0$Y,family = faml,mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
 #'                          EM.useGD = T, LR = 0.0001,
 #'                          EM.maxit = 500, DM.maxit = 1000, nQP = 35, verbose = T,
 #'                          corLV = T, tolerance = 1e-5, start.b = mod0$b, start.R = mod0$R,
 #'                          restr.b = ires, restr.R = matrix(c(1,NA,NA,1),2), sign.restr.b = c(-1,2))
 #' }
 #' @export
-glvmlss_sim <- function(n, family,
-                        mu.eq = ~ Z1, sg.eq = NULL,
-                        nu.eq = NULL, ta.eq = NULL,
-                        control = list(), ...){
+glvmlss_sim = function(n, family,
+                       mu.eq = ~ Z1, sg.eq = NULL,
+                       nu.eq = NULL, ta.eq = NULL,
+                       X = NULL,
+                       control = list(), ...){
 
-  form <- pr_form(mu.eq, sg.eq, nu.eq, ta.eq)
-  q <- pr_q(form)
-  control <- pr_control(control,q, ...)
-  bR <- pr_bRsim(control,q,length(family),form)
-  bcube <- bR$b
-  Rmat <- bR$R
-  out <- glvmlss_rcpp_sim(n = n,famr = family,q = q,b = bcube[], R = Rmat[], control = control)
-  dimnames(out$b) <- dimnames(bcube)
-  colnames(out$Y) <- rownames(bcube)
-  colnames(out$Z) <- colnames(bcube)
-  dimnames(out$R) <- dimnames(Rmat)
+  if(is.numeric(n)) n = as.integer(n)
+  if(!is.integer(n)) stop("Argument n is not interger")
+  family = prep_family(family)
+  form = prep_form(mu.eq, sg.eq, nu.eq, ta.eq, family)
+  vars = prep_vars(form)
+  control = prep_control_sim(control, vars$q, ...)
+  pars = prep_pars_sim(control, vars, length(family), form)
+  if(!is.null(X) && !is.matrix(X)) X = as.matrix(X)
+  if(!is.null(X) && length(vars$xvars) == 0) X = NULL
+  out = glvmlss_sim_rcpp(n = n, famr = family, q = vars$q,
+                         b = pars$b[], R = pars$R[],
+                         mu = pars$mu[],
+                         fmat = vars$zxmat[], Xr = X)
+  dimnames(out$b) = dimnames(pars$b)
+  colnames(out$Y) = rownames(pars$b)
+  colnames(out$Z) = vars$zvars
+  dimnames(out$R) = dimnames(pars$R)
+  if(!is.null(X)){
+    colnames(out$X) = vars$xvars
+    out$X = as.data.frame(out$X)
+  }
+  out$Y = as.data.frame(out$Y)
+  out$Z = as.data.frame(out$Z)
+  class(out) = c("glvmlss")
   return(out)
 }

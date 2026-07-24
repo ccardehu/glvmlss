@@ -13,65 +13,47 @@ using namespace boost::math;
 
 // Vector of n simulated units from distribution
 arma::vec Dist::sim(const int n,
-                    int i,
-                    arma::cube& b,
-                    arma::mat& Z){
+                    arma::mat& etas){
 
   arma::colvec res(n);
 
   if(fam == "normal"){
-    arma::vec bmu = b.slice(0).row(i).t() ;
-    arma::vec bsg = b.slice(1).row(i).t() ;
-    arma::uvec bmu0 = arma::find(bmu != 0) ; // add here if != nan
-    arma::uvec bsg0 = arma::find(bsg != 0) ;
-    arma::vec mu = Z.cols(bmu0)*bmu.elem(bmu0);
-    arma::vec sg = exp(Z.cols(bsg0)*bsg.elem(bsg0));
+    arma::vec mu = etas.col(0);
+    arma::vec sg = arma::exp(etas.col(1));
 
-    for(int idx = 0; idx < n; idx++){
-      res(idx) = R::rnorm(mu(idx),sg(idx));
+    for(int i = 0; i < n; i++){
+      res(i) = R::rnorm(mu(i),sg(i));
     }
     return res;
   } else if(fam == "binomial"){
-    arma::vec bmu = b.slice(0).row(i).t() ;
-    arma::uvec bmu0 = arma::find(bmu != 0) ; // add here if != nan
-    arma::vec mu = expitvec(Z.cols(bmu0)*bmu.elem(bmu0));
+    arma::vec mu = expitvec(etas.col(0));
 
-    for(int idx = 0; idx < n; idx++){
-      res(idx) = R::rbinom(1,mu(idx));
+    for(int i = 0; i < n; i++){
+      res(i) = R::rbinom(1,mu(i));
     }
     return res;
   } else if(fam == "beta"){
-    arma::vec bmu = b.slice(0).row(i).t() ;
-    arma::vec bsg = b.slice(1).row(i).t() ;
-    arma::uvec bmu0 = arma::find(bmu != 0) ; // add here if != nan
-    arma::uvec bsg0 = arma::find(bsg != 0) ;
-    arma::vec mu = expitvec(Z.cols(bmu0)*bmu.elem(bmu0));
-    arma::vec sg = expitvec(Z.cols(bsg0)*bsg.elem(bsg0));
+    arma::vec mu = expitvec(etas.col(0));
+    arma::vec sg = expitvec(etas.col(1));
     arma::vec al = geta(mu,sg);
     arma::vec be = getb(mu,sg);
 
-    for(int idx = 0; idx < n; idx++){
-      res(idx) = R::rbeta(al(idx),be(idx));
+    for(int i = 0; i < n; i++){
+      res(i) = R::rbeta(al(i),be(i));
     }
     return res;
   } else if(fam == "sn"){
-    arma::vec bmu = b.slice(0).row(i).t() ;
-    arma::vec bsg = b.slice(1).row(i).t() ;
-    arma::vec bnu = b.slice(2).row(i).t() ;
-    arma::uvec bmu0 = arma::find(bmu != 0) ; // add here if != nan
-    arma::uvec bsg0 = arma::find(bsg != 0) ;
-    arma::uvec bnu0 = arma::find(bnu != 0) ;
-    arma::vec mu = Z.cols(bmu0)*bmu.elem(bmu0);
-    arma::vec sg = exp(Z.cols(bsg0)*bsg.elem(bsg0));
-    arma::vec nu = expitvec(Z.cols(bnu0)*bnu.elem(bnu0));
+    arma::vec mu = etas.col(0);
+    arma::vec sg = arma::exp(etas.col(1));
+    arma::vec nu = expitvec(etas.col(2));
 
     arma::vec nuc = p2nuc(nu);
     arma::vec nud = nc2nd(nuc);
     arma::vec sgd = sc2sd(sg,nuc);
     arma::vec mud = mc2md(mu,sg,nuc);
 
-    for(int idx = 0; idx < n; idx++){
-      res(idx) = rsn(mud(idx),sgd(idx),nud(idx));
+    for(int i = 0; i < n; i++){
+      res(i) = rsn(mud(i),sgd(i),nud(i));
     }
     return res;
   } else return res;
@@ -84,7 +66,6 @@ arma::mat Dist::dy(const int i,
                    arma::cube& b){
 
   arma::vec  Yc = Yr.col(i) ;
-  // arma::mat  Z(QP) ;
 
   int n = Yc.size() ;
   int tqp = Z.n_rows ;
@@ -186,7 +167,6 @@ arma::cube Dist::d1y(const int i,
 
   arma::vec  Yc = Yr.col(i) ;
   int n = Yc.size() ;
-  // arma::mat  Z(QP) ;
   int tqp = Z.n_rows ;
 
   arma::cube D ;
@@ -267,7 +247,7 @@ arma::cube Dist::d1y(const int i,
           D(jj,ii,0) = ((1.0 - std::pow(sgd,2))/std::pow(sgd,2)) * (-1.0*boost::math::digamma(ad) +
             boost::math::digamma(bd) + std::log(Yc(jj)) - std::log(1.0-Yc(jj))) * dXmd ;
           // First derivatives of sg: d1fdsg * dsgdeta
-          D(jj,ii,1) = -1.0*(2/(std::pow(sgd,3))) * (mud * (-1.0*boost::math::digamma(ad) + boost::math::digamma(ad + bd) +
+          D(jj,ii,1) = -1.0*(2.0/(std::pow(sgd,3))) * (mud * (-1.0*boost::math::digamma(ad) + boost::math::digamma(ad + bd) +
             std::log(Yc(jj))) + (1-mud)*(-1.0*boost::math::digamma(bd) + boost::math::digamma(ad + bd) +
             std::log(1.0 - Yc(jj))) ) * dXsd ;
         }
@@ -331,7 +311,6 @@ arma::cube Dist::d2y(const int i,
 
   arma::vec  Yc = Yr.col(i) ;
   int n = Yc.size() ;
-  // arma::mat  Z(QP) ;
   int tqp = Z.n_rows ;
 
   arma::cube D ;
@@ -606,7 +585,6 @@ arma::cube Dist::dCy(const int i,
 
   arma::vec  Yc = Yr.col(i) ;
   int n = Yc.size() ;
-  // arma::mat  Z(QP) ;
   int tqp = Z.n_rows ;
 
   arma::cube D ;
@@ -768,4 +746,3 @@ arma::cube Dist::dCy(const int i,
     }
   } else return D;
 }
-

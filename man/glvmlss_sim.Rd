@@ -4,7 +4,7 @@
 \alias{glvmlss_sim}
 \title{Simulate data for a Generalized latent variable model for location, scale, and shape parameters}
 \usage{
-glvmlss_sim <- function(n, family,
+glvmlss_sim = function(n, family,
                         mu.eq = ~ Z1, sg.eq = NULL,
                         nu.eq = NULL, ta.eq = NULL,
                         control = list(), ...)
@@ -75,34 +75,34 @@ faml = c(rep("sn",p),rep("binomial",p))
 
 # Population (true) factor loadings
 lc = array(0,dim = c(2*p,3,3))
-lc[1:p,1,1] <- c( .19,  .30,  .42,  .45, 1.00,  .16,  .65,  .58)
-lc[1:p,2,1] <- c(-.17, -.24, -.25, -.34, -.36, -.36, -.35, -.30)
-lc[1:p,1,2] <- c(-.95, -.89, -.61, -.87, -.68, -.97,-1.15, -.90)
-lc[1:p,2,2] <- c( .03,  .10,  .08,  .05, -.14, -.03,  .04,  .02)
-lc[1:p,1,3] <- c( .63, 1.56,-1.07,-1.45,-1.04,  .10,  .36,  .30)
-lc[1:p,2,3] <- c( .03,  .78, -.81,  .33,  .32,  .89,  .58, -.36)
-lc[(p+1):(2*p),1,1] <- c( .64, -.47, -.04, -.69,-2.85, -.91,-4.84,-2.73)
-lc[(p+1):(2*p),3,1] <- c( .78, 1.03, 1.95,  .96, 2.28,  .32, 2.53, 1.46)
+lc[1:p,1,1] = c( .19,  .30,  .42,  .45, 1.00,  .16,  .65,  .58)
+lc[1:p,2,1] = c(-.17, -.24, -.25, -.34, -.36, -.36, -.35, -.30)
+lc[1:p,1,2] = c(-.95, -.89, -.61, -.87, -.68, -.97,-1.15, -.90)
+lc[1:p,2,2] = c( .03,  .10,  .08,  .05, -.14, -.03,  .04,  .02)
+lc[1:p,1,3] = c( .63, 1.56,-1.07,-1.45,-1.04,  .10,  .36,  .30)
+lc[1:p,2,3] = c( .03,  .78, -.81,  .33,  .32,  .89,  .58, -.36)
+lc[(p+1):(2*p),1,1] = c( .64, -.47, -.04, -.69,-2.85, -.91,-4.84,-2.73)
+lc[(p+1):(2*p),3,1] = c( .78, 1.03, 1.95,  .96, 2.28,  .32, 2.53, 1.46)
 
 # Population (true) factor correlation matrix
-R <- matrix(c(1,-0.28,-0.28,1),2)
+R = matrix(c(1,-0.28,-0.28,1),2)
 
 # Identification restrictions
-ires <- array(NA,dim = c(2*p,3,3))
-ires[1:p,3,1:3] <- 0
-ires[(p+1):(2*p),2,1] <- 0
-ires[(p+1):(2*p),,2:3] <- 0
+ires = array(NA,dim = c(2*p,3,3))
+ires[1:p,3,1:3] = 0
+ires[(p+1):(2*p),2,1] = 0
+ires[(p+1):(2*p),,2:3] = 0
 
 # Sample size
 n = 3000
 
 # Simulate data
-mod0 <- glvmlss::glvmlss_sim(n = n, family = faml, mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
+mod0 = glvmlss::glvmlss_sim(n = n, family = faml, mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
                              start.b = lc, start.R = R,
                              restr.b = ires, restr.R = matrix(c(1,NA,NA,1),2))
 \dontrun{
 # Fit the model:
-mod1 <- glvmlss::glvmlss(data = mod0$Y,family = faml,mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
+mod1 = glvmlss::glvmlss(data = mod0$Y,family = faml,mu.eq = ~ Z1+Z2, sg.eq = ~ Z1+Z2, nu.eq = ~ Z1+Z2,
                          EM.useGD = T, LR = 0.0001,
                          EM.maxit = 500, DM.maxit = 1000, nQP = 35, verbose = T,
                          corLV = T, tolerance = 1e-5, start.b = mod0$b, start.R = mod0$R,

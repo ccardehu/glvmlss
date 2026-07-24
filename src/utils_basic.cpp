@@ -1,10 +1,14 @@
 #include <RcppArmadillo.h>
 #include "utils_basic.h"
+#include <boost/math/special_functions/digamma.hpp>
+#include <boost/math/special_functions/trigamma.hpp>
 
 using namespace Rcpp;
 using namespace arma;
+using namespace boost::math;
 
 // [[Rcpp::depends(RcppArmadillo)]]
+// [[Rcpp::depends(BH)]]
 
 // Linear list of combinations of dist. parameter indices (k1,k2)
 arma::uword ixd2ll(int& k1, int& k2, int& K){
@@ -26,8 +30,9 @@ arma::uword ixd2ll(int& k1, int& k2, int& K){
 }
 
 // Counts free coefficients in rb for each item i and dist. parameter k
-arma::mat count_b(arma::cube& rb, const int p){
-  int K = rb.n_slices;
+arma::mat count_b(arma::cube& rb){
+  const int K = rb.n_slices;
+  const int p = rb.n_rows;
   arma::mat out(p,K);
   for(int k = 0; k < K; k++){
     arma::mat rbtmp = rb.slice(k);
@@ -64,14 +69,14 @@ arma::vec Cb2Vb(arma::cube& b, arma::cube& rb){
 
 // Matrix b to cube b
 arma::cube Mb2Cb(arma::mat mb,
-                 const int q,
-                 const int K){
-  arma::cube b(mb.n_rows,q+1,K);
+                 const int d1,
+                 const int d2){
+  arma::cube b(mb.n_rows,d1,d2);
   int mem = 0;
-  for(int k = 0; k < K; k++){
-    arma::uvec id0 = arma::regspace<arma::uvec>(mem, (mem + q));
+  for(int k = 0; k < d2; k++){
+    arma::uvec id0 = arma::regspace<arma::uvec>(mem, (mem + (d1-1)));
     b.slice(k) = mb.cols(id0);
-    mem += (q+1);
+    mem += (d1);
   }
   return b;
 }
@@ -79,14 +84,14 @@ arma::cube Mb2Cb(arma::mat mb,
 // Vector b to cube b (fixes free parameters)
 arma::cube Vb2Cb(arma::vec& vb,
                  arma::cube& b,
-                 arma::cube& rb,
-                 const int q){
+                 arma::cube& rb){
   arma::mat bM = Cb2Mb(b).t();
   arma::mat rbM = Cb2Mb(rb).t();
   arma::uvec id0 = arma::find_nan(rbM);
   bM(id0) = vb;
-  int k = b.n_slices;
-  arma::cube bC = Mb2Cb(bM.t(),q,k);
+  int D = b.n_slices;
+  int QS = b.n_cols;
+  arma::cube bC = Mb2Cb(bM.t(),QS,D);
   return bC;
 }
 
@@ -390,7 +395,7 @@ arma::vec nc2nd(arma::vec& nuc){
   double log2pi = std::sqrt(2/M_PI);
   double OoT = 1.0/3.0 ;
   arma::vec R = arma::pow((2*arma::abs(nuc))/(4-M_PI),OoT) % arma::sign(nuc);
-  return R / arma::sqrt(std::pow(log2pi,2) - (1-std::pow(log2pi,2)) * arma::pow(R,2));
+  return R / arma::sqrt(std::pow(log2pi,2) - (1-std::pow(log2pi,2)) * arma::square(R));
 }
 
 // Maps sg_c (centered) to sg_d (direct) of SN distribution
@@ -398,14 +403,14 @@ arma::vec sc2sd(arma::vec& sgc, arma::vec& nuc){
   double log2pi = std::sqrt(2/M_PI);
   arma::vec nud = nc2nd(nuc) ;
   arma::vec R = nud / arma::sqrt(1+arma::pow(nud,2)) ;
-  return sgc / arma::sqrt(1-std::pow(log2pi,2) * arma::pow(R,2)) ;
+  return sgc / arma::sqrt(1-std::pow(log2pi,2) * arma::square(R)) ;
 }
 
 // Maps mu_c (centered) to mu_d (direct) of SN distribution
 arma::vec mc2md(arma::vec& muc, arma::vec& sgc, arma::vec& nuc){
-  double log2pi = std::pow(2/M_PI,0.5);
+  double log2pi = std::sqrt(2/M_PI);
   arma::vec nud = nc2nd(nuc) ;
-  arma::vec R = nud / arma::sqrt(1+arma::pow(nud,2)) ;
+  arma::vec R = nud / arma::sqrt(1+arma::square(nud)) ;
   arma::vec sgd = sc2sd(sgc,nuc);
   return muc - log2pi * sgd % R;
 }
@@ -413,52 +418,52 @@ arma::vec mc2md(arma::vec& muc, arma::vec& sgc, arma::vec& nuc){
 // Maps (0,1) of proposed SN parametrization to nu_c (centered)
 arma::vec p2nuc(arma::vec& p){
   double g1max = std::sqrt(2)*(4-M_PI)/std::pow(M_PI-2,1.5);
-  return(g1max*(2*p - 1));
+  return g1max*(2*p - 1);
 }
 
 // Jacobian d sigma_d / d sigma_c in the centred-to-direct SN reparametrization.
 arma::vec dsddsc(arma::vec& nuc){
-  double log2pi = std::pow(2/M_PI,0.5);
+  double log2pi = std::sqrt(2/M_PI);
   arma::vec nud = nc2nd(nuc);
   arma::vec R = nud / arma::sqrt(1+arma::pow(nud,2)) ;
-  return 1 / arma::sqrt(1-std::pow(log2pi,2) * arma::pow(R,2)) ;
+  return 1 / arma::sqrt(1-std::pow(log2pi,2) * arma::square(R)) ;
 }
 
 // Jacobian d nu_d / d nu_c in the centred-to-direct SN reparametrization.
 arma::vec dnddnc(arma::vec& nuc){
   double a = 2/(3*(4-M_PI));
-  double log2pi = std::pow(2/M_PI,0.5);
+  double log2pi = std::sqrt(2/M_PI);
   double OoT = 1.0/3.0 ;
   arma::vec R = arma::pow((2*arma::abs(nuc))/(4-M_PI),OoT) % arma::sign(nuc);
-  arma::vec t = arma::sqrt(std::pow(log2pi,2) - (1-std::pow(log2pi,2)) * arma::pow(R,2));
-  return a * (1/(t % arma::pow(R,2)) + (1-std::pow(log2pi,2))/arma::pow(t,3));
+  arma::vec t = arma::sqrt(std::pow(log2pi,2) - (1-std::pow(log2pi,2)) * arma::square(R));
+  return a * (1/(t % arma::square(R)) + (1-std::pow(log2pi,2))/arma::pow(t,3));
 }
 
 // Jacobian d mu_d / d sigma_c in the centred-to-direct SN reparametrization.
 arma::vec dmddsc(arma::vec& nuc){
-  double log2pi = std::pow(2/M_PI,0.5);
+  double log2pi = std::sqrt(2/M_PI);
   arma::vec nud = nc2nd(nuc);
-  arma::vec R = nud / arma::sqrt(1+arma::pow(nud,2)) ;
-  return - (log2pi * R) / arma::sqrt(1 - std::pow(log2pi,2) * arma::pow(R,2)) ;
+  arma::vec R = nud / arma::sqrt(1+arma::square(nud)) ;
+  return - (log2pi * R) / arma::sqrt(1 - std::pow(log2pi,2) * arma::square(R)) ;
 }
 
 // Jacobian d mu_d / d nu_c in the centred-to-direct SN reparametrization.
 arma::vec dmddnc(arma::vec& sgc, arma::vec& nuc){
-  double log2pi = std::pow(2/M_PI,0.5);
+  double log2pi = std::sqrt(2/M_PI);
   arma::vec nud = nc2nd(nuc);
-  arma::vec R = nud / arma::sqrt(1+arma::pow(nud,2)) ;
-  return - (sgc % (log2pi * R)) / (3*arma::sqrt(1 - std::pow(log2pi,2) * arma::pow(R,2)) % nuc) ;
+  arma::vec R = nud / arma::sqrt(1+arma::square(nud)) ;
+  return - (sgc % (log2pi * R)) / (3*arma::sqrt(1 - std::pow(log2pi,2) * arma::square(R)) % nuc) ;
 }
 
 // Jacobian d sigma_d / d nu_c in the centred-to-direct SN reparametrization
 arma::vec dsddnc(arma::vec& sgc, arma::vec& nuc){
-  double log2pi = std::pow(2/M_PI,0.5);
+  double log2pi = std::sqrt(2/M_PI);
   arma::vec nud = nc2nd(nuc);
-  arma::vec R = nud / arma::sqrt(1+arma::pow(nud,2)) ;
+  arma::vec R = nud / arma::sqrt(1+arma::square(nud)) ;
   arma::vec mz = log2pi * R ;
-  arma::vec sz = arma::sqrt(1 - std::pow(log2pi,2) * arma::pow(R,2)) ;
-  arma::vec d1 = -sgc / arma::pow(sz,2);
-  arma::vec d2 = -mz/sz % (log2pi / arma::pow(1+arma::pow(nud,2) ,1.5)) ;
+  arma::vec sz = arma::sqrt(1 - std::pow(log2pi,2) * arma::square(R)) ;
+  arma::vec d1 = -sgc / arma::square(sz);
+  arma::vec d2 = -mz/sz % (log2pi / arma::pow(1+arma::square(nud), 1.5)) ;
   arma::vec d3 = dnddnc(nuc);
   return d1 % d2 % d3;
 }
@@ -596,4 +601,20 @@ void fixb(arma::cube& b,
       }
     }
   }
+}
+
+// Draw from Multivariate Normal distribution
+arma::mat rMVnorm(const int n, arma::vec& mu, arma::mat& R){
+ const int q = R.n_cols;
+ arma::mat Y(n,q), eigm(q,q);
+ for(int i = 0; i < n; i++){
+  for(int j = 0; j < q; j++){
+   Y(i,j) = R::rnorm(0,1);
+  }
+ }
+ arma::vec eigv(q);
+ arma::eig_sym(eigv,eigm,R);
+ arma::mat teigm = eigm.t();
+ teigm.each_col() %= arma::sqrt(eigv);
+ return arma::repmat(mu, 1, n).t() + Y * (eigm * teigm);
 }
